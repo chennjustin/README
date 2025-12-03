@@ -174,11 +174,14 @@
    - `BOOK_COPIES`
    - `BOOK_LOAN`
    - `LOAN_RECORD`
+   - `FEE_TYPE`
+   - `ADD_FEE`
    - `RESERVATION`
    - `RESERVATION_RECORD`
 
-3. 檢查 `MEMBERSHIP_LEVEL` 表是否有 3 條記錄（铜、银、金）
+3. 檢查 `MEMBERSHIP_LEVEL` 表是否有 3 條記錄（銅、銀、金）
 4. 檢查 `CONDITION_DISCOUNT` 表是否有 3 條記錄（Good, Fair, Poor）
+5. 檢查 `FEE_TYPE` 表是否有 6 條記錄（renew, overdue, damage_good_to_fair, damage_good_to_poor, damage_fair_to_poor, lost）
 
 ### 驗證 MongoDB
 

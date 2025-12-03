@@ -4,8 +4,8 @@
 
 ## 檔案說明
 
-- `migrations/001_initial_schema.sql` - 初始資料庫 schema，包含所有 12 個關聯表的定義
-- `seed.sql` - 初始資料檔案，包含會員等級和書況折扣的基礎資料
+- `migrations/001_initial_schema.sql` - 初始資料庫 schema，包含所有 14 個關聯表的定義
+- `seed.sql` - 初始資料檔案，包含會員等級、書況折扣和費用類型的基礎資料
 
 ## 使用方法
 

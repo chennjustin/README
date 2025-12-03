@@ -3,20 +3,28 @@
 // 建立集合和索引
 // ============================================
 
+require('dotenv').config();
 const { MongoClient } = require('mongodb');
 const schema = require('../schema/search_history');
 
 // MongoDB 連接字串
-// 請替換為您的實際連接字串
+// 從環境變數讀取，支援兩種變數名稱
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
-const DATABASE_NAME = process.env.DATABASE_NAME || 'book_rental_db';
+const DATABASE_NAME = process.env.MONGODB_DATABASE || process.env.DATABASE_NAME || 'book_rental_db';
 
 /**
  * 初始化 MongoDB 資料庫
  * 建立集合和索引
  */
 async function initDatabase() {
-    const client = new MongoClient(MONGODB_URI);
+    // 添加 SSL/TLS 配置
+    const client = new MongoClient(MONGODB_URI, {
+        tls: true,
+        tlsAllowInvalidCertificates: false,
+        tlsAllowInvalidHostnames: false,
+        serverSelectionTimeoutMS: 5000,
+        connectTimeoutMS: 10000,
+    });
     
     try {
         // 連接到 MongoDB
@@ -61,11 +69,12 @@ async function initDatabase() {
         console.log('\n資料庫初始化完成！');
         
         // 顯示集合統計資訊
-        const stats = await collection.stats();
+        const count = await collection.countDocuments();
+        const indexes = await collection.indexes();
         console.log(`\n集合統計資訊:`);
-        console.log(`  集合名稱: ${stats.ns}`);
-        console.log(`  文檔數量: ${stats.count}`);
-        console.log(`  索引數量: ${stats.nindexes}`);
+        console.log(`  集合名稱: ${schema.collectionName}`);
+        console.log(`  文檔數量: ${count}`);
+        console.log(`  索引數量: ${indexes.length}`);
         
     } catch (error) {
         console.error('初始化資料庫時發生錯誤:', error);

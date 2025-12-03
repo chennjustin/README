@@ -22,6 +22,17 @@ README/
 ├── scripts/                # 自動化腳本
 │   ├── setup_relational.sh      # 關聯式資料庫設定腳本
 │   └── setup_non-relational.sh  # 非關聯式資料庫設定腳本
+├── config/                 # 配置檔案
+│   └── database.js        # 資料庫連接配置模組
+├── examples/               # 連接範例
+│   ├── connect-supabase.js    # Supabase 連接範例
+│   ├── connect-postgres.js    # PostgreSQL 連接範例
+│   ├── connect-mongodb.js     # MongoDB 連接範例
+│   ├── connect-python.py       # Python 連接範例
+│   └── test-connections.js     # 連接測試腳本
+├── docs/                   # 文檔
+│   └── CONNECTION_GUIDE.md    # 資料庫連接指南
+├── .env.example           # 環境變數範例
 ├── package.json            # Node.js 依賴配置
 ├── LICENSE                # 許可證檔案
 └── README.md              # 本檔案
@@ -62,7 +73,7 @@ README/
 
 ### Supabase (PostgreSQL)
 
-包含 12 個關聯表：
+包含 14 個關聯表：
 - `MEMBERSHIP_LEVEL` - 會員等級
 - `ADMIN` - 管理員/店員
 - `MEMBER` - 會員
@@ -73,6 +84,8 @@ README/
 - `BOOK_COPIES` - 書籍複本
 - `BOOK_LOAN` - 借閱交易
 - `LOAN_RECORD` - 借閱記錄詳情
+- `FEE_TYPE` - 費用類型
+- `ADD_FEE` - 額外費用
 - `RESERVATION` - 預約記錄
 - `RESERVATION_RECORD` - 預約與書籍關係
 
@@ -86,23 +99,52 @@ README/
 - [設定指南](database/docs/setup_guide.md) - 詳細的資料庫設定步驟
 - [Schema 參考](database/docs/schema_reference.md) - 完整的資料庫結構說明
 - [資料匯入指南](database/docs/data_import_guide.md) - 如何匯入業務資料
+- [**連接指南**](docs/CONNECTION_GUIDE.md) - 如何在應用程式中連接資料庫 ⭐
 
 ## 系統要求
 
 - **Supabase**: 免費帳號即可
 - **MongoDB Atlas**: 免費 M0 叢集即可
-- **Node.js**: 14+ (用於 MongoDB 腳本)
+- **Node.js**: 14+ (用於腳本和連接範例)
 - **Supabase CLI**: (可選，用於自動化部署)
+
+## 連接資料庫
+
+### 快速開始
+
+1. **安裝依賴**：
+   ```bash
+   npm install
+   ```
+
+2. **設定環境變數**：
+   ```bash
+   cp .env.example .env
+   # 編輯 .env 檔案，填入您的資料庫連接資訊
+   ```
+
+3. **測試連接**：
+   ```bash
+   npm run test:connection
+   ```
+
+### 詳細說明
+
+請參考 [連接指南](docs/CONNECTION_GUIDE.md) 了解：
+- 如何取得連接資訊
+- Node.js / Python 連接範例
+- 前端框架（React、Vue）連接範例
+- 常見問題解答
 
 ## 資料匯入順序
 
 為避免外鍵約束錯誤，建議按以下順序匯入資料：
 
-1. 基礎資料：`MEMBERSHIP_LEVEL`, `CONDITION_DISCOUNT`
+1. 基礎資料：`MEMBERSHIP_LEVEL`, `CONDITION_DISCOUNT`, `FEE_TYPE`
 2. 基礎實體：`ADMIN`, `CATEGORY`, `BOOK`
 3. 關係資料：`BOOK_CATEGORY`, `BOOK_COPIES`
 4. 會員資料：`MEMBER`
-5. 業務資料：`RESERVATION`, `RESERVATION_RECORD`, `BOOK_LOAN`, `LOAN_RECORD`
+5. 業務資料：`RESERVATION`, `RESERVATION_RECORD`, `BOOK_LOAN`, `LOAN_RECORD`, `ADD_FEE`
 6. NoSQL 資料：`search_history`
 
 詳細說明請參考 [資料匯入指南](database/docs/data_import_guide.md)。

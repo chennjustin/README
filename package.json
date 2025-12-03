@@ -5,6 +5,11 @@
   "main": "index.js",
   "scripts": {
     "setup:non-relational": "node database/non-relational/migrations/init_collections.js",
+    "test:connection": "node examples/test-connections.js",
+    "test:supabase": "node examples/connect-supabase.js",
+    "test:postgres": "node examples/connect-postgres.js",
+    "test:mongodb": "node examples/connect-mongodb.js",
+    "diagnose:mongodb": "node examples/diagnose-mongodb.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -17,7 +22,10 @@
   "author": "陳竑齊",
   "license": "MIT",
   "dependencies": {
-    "mongodb": "^6.0.0"
+    "mongodb": "^6.0.0",
+    "@supabase/supabase-js": "^2.39.0",
+    "pg": "^8.11.3",
+    "dotenv": "^16.3.1"
   },
   "engines": {
     "node": ">=14.0.0"

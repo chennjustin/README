@@ -120,7 +120,7 @@ CREATE TABLE BOOK_COPIES (
     book_condition VARCHAR(20) NOT NULL,
     rental_price INTEGER NOT NULL,
     PRIMARY KEY (book_id, copies_serial),
-    CONSTRAINT chk_copies_status CHECK (status IN ('Available', 'Borrowed', 'Damaged', 'Lost')),
+    CONSTRAINT chk_copies_status CHECK (status IN ('Available', 'Borrowed', 'Lost')),
     CONSTRAINT chk_purchase_price CHECK (purchase_price > 0),
     CONSTRAINT chk_rental_price CHECK (rental_price > 0),
     CONSTRAINT fk_copies_book FOREIGN KEY (book_id) 
@@ -166,7 +166,7 @@ CREATE TABLE LOAN_RECORD (
     renew_cnt INTEGER DEFAULT 0,
     PRIMARY KEY (loan_id, book_id, copies_serial),
     CONSTRAINT chk_rental_fee CHECK (rental_fee >= 0),
-    CONSTRAINT chk_renew_cnt CHECK (renew_cnt >= 0),
+    CONSTRAINT chk_renew_cnt CHECK (renew_cnt >= 0 AND renew_cnt <= 1),
     CONSTRAINT chk_due_date CHECK (due_date >= date_out),
     CONSTRAINT chk_return_date CHECK (return_date IS NULL OR return_date >= date_out),
     CONSTRAINT fk_loan_record_loan FOREIGN KEY (loan_id) 
@@ -214,21 +214,36 @@ CREATE TABLE RESERVATION_RECORD (
 );
 
 -- ============================================
--- 13. ADD_FEE - 額外費用表（弱實體）
+-- 13. FEE_TYPE - 費用類型表
+-- ============================================
+CREATE TABLE FEE_TYPE (
+    type VARCHAR(30) PRIMARY KEY,
+    base_amount INTEGER,
+    rate DECIMAL(4,3),
+    CONSTRAINT chk_fee_type_name CHECK (type IN ('renew', 'overdue', 'damage_good_to_fair', 'damage_good_to_poor', 'damage_fair_to_poor', 'lost')),
+    CONSTRAINT chk_base_amount CHECK (base_amount IS NULL OR base_amount >= 0),
+    CONSTRAINT chk_rate CHECK (rate IS NULL OR (rate >= 0 AND rate <= 1))
+);
+
+-- ============================================
+-- 14. ADD_FEE - 額外費用表（弱實體）
 -- ============================================
 CREATE TABLE ADD_FEE (
     loan_id BIGINT NOT NULL,
     book_id BIGINT NOT NULL,
     copies_serial INTEGER NOT NULL,
-    type VARCHAR(20) NOT NULL,
+    type VARCHAR(30) NOT NULL,
     amount INTEGER NOT NULL,
     date DATE NOT NULL,
-    PRIMARY KEY (loan_id, book_id, copies_serial, type, date),
-    CONSTRAINT chk_fee_type CHECK (type IN ('Overdue', 'Damage', 'Lost')),
+    PRIMARY KEY (loan_id, book_id, copies_serial, type),
     CONSTRAINT chk_fee_amount CHECK (amount >= 0),
     CONSTRAINT fk_add_fee_loan_record FOREIGN KEY (loan_id, book_id, copies_serial) 
         REFERENCES LOAN_RECORD(loan_id, book_id, copies_serial) 
         ON DELETE CASCADE 
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_add_fee_type FOREIGN KEY (type) 
+        REFERENCES FEE_TYPE(type) 
+        ON DELETE RESTRICT 
         ON UPDATE CASCADE
 );
 
@@ -288,5 +303,7 @@ COMMENT ON TABLE BOOK_LOAN IS '借閱交易表：記錄每次借閱交易';
 COMMENT ON TABLE LOAN_RECORD IS '借閱記錄詳情表：記錄每本書在每次借閱中的詳細資訊';
 COMMENT ON TABLE RESERVATION IS '預約記錄表：記錄會員的預約資訊';
 COMMENT ON TABLE RESERVATION_RECORD IS '預約與書籍關係表：多對多關係';
-COMMENT ON TABLE ADD_FEE IS '額外費用表：記錄借閱記錄的各種額外費用（逾期、損壞、遺失等）';
+COMMENT ON TABLE FEE_TYPE IS '費用類型表：定義各種額外費用的計算規則（續借、逾期、損壞、遺失等）';
+COMMENT ON TABLE ADD_FEE IS '額外費用表：記錄借閱記錄的各種額外費用（續借費、逾期罰金、損壞賠償、遺失賠償等）';
+COMMENT ON COLUMN BOOK_LOAN.final_price IS '總租金：由所有 LOAN_RECORD 的 rental_fee 加總，不包含後續於 ADD_FEE 產生的續借費與罰金';
 
