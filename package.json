@@ -1,0 +1,26 @@
+{
+  "name": "book-rental-database",
+  "version": "1.0.0",
+  "description": "獨立租借書店系統 - 資料庫架構",
+  "main": "index.js",
+  "scripts": {
+    "setup:non-relational": "node database/non-relational/migrations/init_collections.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "database",
+    "postgresql",
+    "mongodb",
+    "supabase",
+    "schema"
+  ],
+  "author": "陳竑齊",
+  "license": "MIT",
+  "dependencies": {
+    "mongodb": "^6.0.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
+
