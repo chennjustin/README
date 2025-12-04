@@ -65,8 +65,8 @@ CREATE TABLE MEMBER (
 -- ============================================
 CREATE TABLE BOOK (
     book_id BIGSERIAL PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    author VARCHAR(50) NOT NULL,
+    name VARCHAR(150) NOT NULL,
+    author VARCHAR(60) NOT NULL,
     publisher VARCHAR(100),
     price INTEGER NOT NULL,
     CONSTRAINT chk_price CHECK (price > 0)
