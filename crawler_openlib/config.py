@@ -28,7 +28,7 @@ DB_CONFIG = {
 }
 
 # Scraping settings
-TARGET_BOOK_COUNT = 500  # Target number of books to scrape
+TARGET_BOOK_COUNT = 1000  # Target number of books to scrape
 BATCH_SIZE = 50  # Number of books to process in each batch
 SEARCH_LIMIT = 100  # Maximum results per search query
 
