@@ -65,7 +65,6 @@ CREATE TABLE MEMBER (
 -- ============================================
 CREATE TABLE BOOK (
     book_id BIGSERIAL PRIMARY KEY,
-    sequence_name VARCHAR(50),
     name VARCHAR(100) NOT NULL,
     author VARCHAR(50) NOT NULL,
     publisher VARCHAR(50),
