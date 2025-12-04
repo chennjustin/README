@@ -67,7 +67,7 @@ CREATE TABLE BOOK (
     book_id BIGSERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     author VARCHAR(50) NOT NULL,
-    publisher VARCHAR(50),
+    publisher VARCHAR(100),
     price INTEGER NOT NULL,
     CONSTRAINT chk_price CHECK (price > 0)
 );
