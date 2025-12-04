@@ -84,12 +84,14 @@ class BookExporter:
             print(f"Error fetching books: {e}")
             raise
     
-    def process_book_data(self, book: Dict, valid_publishers: List[str] = None) -> Dict:
+    def process_book_data(self, book: Dict, sequence_number: int, valid_publishers: List[str] = None) -> Dict:
         """
         Process and complete missing fields in book data
         Returns processed book dictionary with all required fields
+        book_id is formatted as 8-digit integer starting from 00000000
         """
-        book_id = book.get('book_id') or f"BOOK_{random.randint(10000, 99999)}"
+        # Format book_id as 8-digit integer (zero-padded)
+        book_id = f"{sequence_number:08d}"
         
         # Handle publisher field
         publisher = book.get('publisher') or "Unknown Publisher"
@@ -100,39 +102,136 @@ class BookExporter:
             else:
                 publisher = "Unknown Publisher"
         
+        # Replace publisher if it exceeds 50 characters
+        if len(publisher) > 50:
+            if valid_publishers and len(valid_publishers) > 0:
+                publisher = random.choice(valid_publishers)
+            else:
+                publisher = "Unknown Publisher"
+        
+        # Handle author field - keep only first author if multiple authors exist
+        author = book.get('author') or "Unknown Author"
+        author = self._process_author(author)
+        
+        # Handle book name - remove supplementary information
+        book_name = book.get('name') or f"Unknown Book {book_id}"
+        book_name = self._process_book_name(book_name)
+        
         processed = {
             'book_id': book_id,
-            'name': book.get('name') or f"Unknown Book {book_id}",
-            'author': book.get('author') or "Unknown Author",
+            'name': book_name,
+            'author': author,
             'publisher': publisher,
             'price': self._process_price(book.get('price'), book_id)
         }
         
         return processed
     
+    def _process_author(self, author: str) -> str:
+        """
+        Process author field to keep only first author if multiple authors exist
+        Handles separators like "、", ",", and keywords like "合著", "等", "編著", "譯者"
+        """
+        if not author or not author.strip():
+            return "Unknown Author"
+        
+        author = author.strip()
+        
+        # Check for keywords that indicate multiple authors
+        keywords_to_remove = ["合著", "等", "編著", "譯者", "◎"]
+        for keyword in keywords_to_remove:
+            if keyword in author:
+                # Remove everything from the keyword onwards
+                index = author.find(keyword)
+                author = author[:index].strip()
+        
+        # Check for common separators
+        separators = ["、", ",", "，", "/", "／"]
+        for separator in separators:
+            if separator in author:
+                # Keep only the first author before the separator
+                parts = author.split(separator, 1)
+                author = parts[0].strip()
+                break
+        
+        return author if author else "Unknown Author"
+    
+    def _process_book_name(self, name: str) -> str:
+        """
+        Remove supplementary information from book name
+        Removes content in brackets [], parentheses (), and other supplementary text
+        """
+        if not name or not name.strip():
+            return name
+        
+        import re
+        
+        # Remove content in 【】 brackets (Chinese brackets) - most common pattern
+        name = re.sub(r'【[^】]*】', '', name)
+        
+        # Remove content in （） parentheses (Chinese parentheses)
+        name = re.sub(r'（[^）]*）', '', name)
+        
+        # Remove content in () parentheses (English parentheses)
+        name = re.sub(r'\([^)]*\)', '', name)
+        
+        # Remove content in [] brackets (English brackets)
+        name = re.sub(r'\[[^\]]*\]', '', name)
+        
+        # Remove content in 「」 quotes (Chinese quotes)
+        name = re.sub(r'「[^」]*」', '', name)
+        
+        # Remove content in 『』 quotes (Chinese double quotes)
+        name = re.sub(r'『[^』]*』', '', name)
+        
+        # Remove content in ~ ~ (tildes)
+        name = re.sub(r'~[^~]*~', '', name)
+        
+        # Remove standalone version indicators at the end (but keep numbers that are part of title)
+        # Pattern: (2版), (二版), (全新第2版), etc. but only if standalone
+        name = re.sub(r'\s*[（(]\s*[全新增修修訂]*[第]?[0-9一二三四五六七八九十]+[版版本]\s*[）)]\s*$', '', name)
+        
+        # Remove trailing colons and their content (supplementary descriptions)
+        name = re.sub(r'：.*$', '', name)
+        
+        # Clean up multiple spaces and trim
+        name = re.sub(r'\s+', ' ', name)
+        name = name.strip()
+        
+        # Remove trailing punctuation
+        name = re.sub(r'[：:、，,。.]+$', '', name)
+        name = name.strip()
+        
+        return name if name else "Unknown Book"
+    
     def _process_price(self, price: Optional[float], book_id: str) -> float:
         """
         Process price field based on book_id
         All books (including ESLITE) should have price = original_price * 10%
         Original price is randomly generated between 300-500
+        Price is rounded to nearest integer
         """
         # For all books, generate random original price between 300-500
         # Then calculate 10% of original price
         original_price = random.randint(300, 500)
         calculated_price = original_price * 0.1
-        return round(calculated_price, 2)
+        # Round to nearest integer
+        return round(calculated_price)
     
     def get_valid_publishers(self, books: List[Dict]) -> List[str]:
         """
         Extract all valid publishers from books list
-        Excludes "新功能介紹" and empty/None publishers
-        Returns list of unique valid publishers
+        Excludes "新功能介紹", empty/None publishers, and publishers exceeding 50 characters
+        Returns list of unique valid publishers (max 50 characters)
         """
         valid_publishers = set()
         for book in books:
             publisher = book.get('publisher')
             if publisher and publisher.strip() and publisher != "新功能介紹":
-                valid_publishers.add(publisher.strip())
+                publisher = publisher.strip()
+                # Only include publishers with 50 characters or less
+                if len(publisher) <= 50:
+                    valid_publishers.add(publisher)
         
         return list(valid_publishers)
     
@@ -224,11 +323,32 @@ class BookExporter:
             # Process each book
             processed_books = []
             for book in books:
-                processed_book = self.process_book_data(book, valid_publishers)
+                processed_book = self.process_book_data(book, len(processed_books), valid_publishers)
                 processed_books.append(processed_book)
             
+            # Filter out books with name > 150 characters or author > 60 characters
+            filtered_books = []
+            removed_count = 0
+            for book in processed_books:
+                book_name = book.get('name', '')
+                author = book.get('author', '')
+                
+                if len(book_name) > 150 or len(author) > 60:
+                    removed_count += 1
+                    continue
+                
+                filtered_books.append(book)
+            
+            if removed_count > 0:
+                print(f"Removed {removed_count} book(s) with name > 150 chars or author > 60 chars")
+                print(f"Before filtering: {len(processed_books)}, After filtering: {len(filtered_books)}")
+            
             # Remove duplicates based on book name
-            unique_books = self.remove_duplicates_by_name(processed_books)
+            unique_books = self.remove_duplicates_by_name(filtered_books)
+            
+            # Reassign book_id sequentially after removing duplicates
+            for index, book in enumerate(unique_books):
+                book['book_id'] = f"{index:08d}"
             
             # Export to CSV
             self.export_to_csv(unique_books, output_file)
