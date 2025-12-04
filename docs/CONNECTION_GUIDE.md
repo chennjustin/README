@@ -65,8 +65,17 @@ npm run test:mongodb
    - `SUPABASE_SERVICE_ROLE_KEY`: 服務角色密鑰（僅用於後端，請保密）
 
 2. **Settings → Database**：
-   - `DATABASE_URL`: PostgreSQL 連接字串
-   - `DATABASE_POOL_URL`: 連接池字串（推薦用於生產環境）
+   - `DATABASE_URL`: PostgreSQL 連接字串（**後端開發必備**）
+     - 在 **Connection string** 區塊，選擇 **URI** 格式
+     - **方式 A：直接連接（port 5432）**
+       - 格式：`postgresql://postgres:[YOUR-PASSWORD]@[PROJECT-REF].supabase.co:5432/postgres`
+       - 將 `[YOUR-PASSWORD]` 替換為您的資料庫密碼
+     - **方式 B：連接池連接（port 6543，推薦）**
+       - 格式：`postgresql://postgres.[PROJECT-REF]:[YOUR-PASSWORD]@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1&pool_timeout=20`
+       - 注意：必須包含 `?pgbouncer=true&connection_limit=1&pool_timeout=20` 參數
+       - 如果直接連接（5432）失敗，建議使用連接池連接（6543）
+     - 如果忘記密碼，可以在 **Settings → Database → Reset database password** 重置
+   - `DATABASE_POOL_URL`: 連接池字串（可選，與 DATABASE_URL 設定連接池 URL 效果相同）
 
 ### MongoDB 連接資訊
 
@@ -103,9 +112,59 @@ const { data, error } = await supabase
 // 詳細範例請參考：examples/connect-supabase.js
 ```
 
-### 方法 2: 使用 PostgreSQL 直接連接
+### 方法 2: 使用 PostgreSQL 直接連接（推薦後端使用）
 
-適用於需要執行複雜 SQL 查詢的後端應用。
+**適用於後端開發**，提供完整的 SQL 功能和更好的控制權。
+
+#### 方式 A: 使用配置模組（推薦）
+
+```javascript
+// 使用專案提供的配置模組
+const { postgresPool } = require('../config/database');
+require('dotenv').config();
+
+// 取得連接池
+const pool = postgresPool();
+
+// 查詢範例
+const result = await pool.query('SELECT * FROM BOOK LIMIT 10');
+
+// 複雜查詢範例（JOIN、子查詢等）
+const memberWithLoans = await pool.query(`
+  SELECT 
+    m.member_id,
+    m.name,
+    m.email,
+    ml.level_name,
+    COUNT(lr.loan_id) as total_loans
+  FROM MEMBER m
+  JOIN MEMBERSHIP_LEVEL ml ON m.level_id = ml.level_id
+  LEFT JOIN LOAN_RECORD lr ON m.member_id = (
+    SELECT member_id FROM BOOK_LOAN WHERE loan_id = lr.loan_id
+  )
+  WHERE m.status = 'Active'
+  GROUP BY m.member_id, m.name, m.email, ml.level_name
+`);
+
+// 事務範例
+const client = await pool.connect();
+try {
+  await client.query('BEGIN');
+  
+  // 執行多個操作
+  await client.query('INSERT INTO BOOK ...');
+  await client.query('INSERT INTO BOOK_COPIES ...');
+  
+  await client.query('COMMIT');
+} catch (error) {
+  await client.query('ROLLBACK');
+  throw error;
+} finally {
+  client.release();
+}
+```
+
+#### 方式 B: 直接使用 pg 套件
 
 ```javascript
 // 使用 pg 套件
@@ -114,7 +173,7 @@ require('dotenv').config();
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: { rejectUnauthorized: false } // Supabase 需要 SSL
 });
 
 // 查詢範例
@@ -122,6 +181,19 @@ const result = await pool.query('SELECT * FROM BOOK LIMIT 10');
 
 // 詳細範例請參考：examples/connect-postgres.js
 ```
+
+**取得 DATABASE_URL**：
+1. 登入 Supabase Dashboard
+2. 前往 **Settings → Database**
+3. 在 **Connection string** 區塊，選擇 **URI** 格式
+4. **推薦使用連接池連接（port 6543）**：
+   - 複製連接字串（格式：`postgresql://postgres.[PROJECT-REF]:[YOUR-PASSWORD]@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres`）
+   - 將 `[YOUR-PASSWORD]` 替換為您的資料庫密碼
+   - **重要**：在連接字串末尾加上 `?pgbouncer=true&connection_limit=1&pool_timeout=20`
+   - 完整範例：`postgresql://postgres.xxxxx:PASSWORD@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1&pool_timeout=20`
+5. 如果連接池連接失敗，可以嘗試直接連接（port 5432）：
+   - 格式：`postgresql://postgres:[YOUR-PASSWORD]@[PROJECT-REF].supabase.co:5432/postgres`
+6. 將連接字串設定到 `.env` 檔案的 `DATABASE_URL` 變數
 
 ### 方法 3: 使用 MongoDB
 
@@ -259,14 +331,31 @@ export default {
 ```javascript
 // 使用配置模組
 const dbConfig = require('./config/database');
+require('dotenv').config();
 
 // 驗證配置
 if (!dbConfig.validate()) {
   process.exit(1);
 }
 
-// 使用配置
-const { supabase, postgres, mongodb } = dbConfig;
+// 後端開發：使用 PostgreSQL 連接池（推薦）
+const pool = dbConfig.postgresPool();
+
+// 執行查詢
+const result = await pool.query('SELECT * FROM MEMBER WHERE member_id = $1', [1]);
+
+// 前端開發：使用 Supabase Client
+const { createClient } = require('@supabase/supabase-js');
+const supabase = createClient(
+  dbConfig.supabase.url,
+  dbConfig.supabase.anonKey
+);
+
+// MongoDB 連接
+const { MongoClient } = require('mongodb');
+const mongoClient = new MongoClient(dbConfig.mongodb.uri);
+await mongoClient.connect();
+const db = mongoClient.db(dbConfig.mongodb.database);
 ```
 
 ---
@@ -277,7 +366,17 @@ const { supabase, postgres, mongodb } = dbConfig;
 
 **A:** 
 - **Supabase Client**：推薦用於前端和簡單的後端操作，提供自動類型檢查、即時訂閱等功能
-- **PostgreSQL 直接連接**：適用於需要執行複雜 SQL、存儲過程、或需要更多控制權的場景
+- **PostgreSQL 直接連接（DATABASE_URL）**：**強烈推薦用於後端開發**，原因：
+  - ✅ 更靈活：可以執行任意複雜的 SQL 查詢、JOIN、子查詢、存儲過程
+  - ✅ 更直觀：直接使用 SQL，不需要學習 Supabase Client 的 API
+  - ✅ 更高效：避免 Client 層的額外開銷，直接與資料庫通訊
+  - ✅ 更易除錯：SQL 錯誤訊息更清晰，可以直接在 Supabase Dashboard 的 SQL Editor 測試
+  - ✅ 支援事務：更容易處理複雜的業務邏輯和資料一致性
+  - ✅ 連接池管理：自動管理連接，適合高併發場景
+
+**建議**：
+- 前端：使用 Supabase Client（`SUPABASE_URL` + `SUPABASE_ANON_KEY`）
+- 後端：使用 PostgreSQL 直接連接（`DATABASE_URL`）
 
 ### Q: 如何選擇使用哪個 Key？
 

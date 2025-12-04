@@ -9,6 +9,7 @@
     "test:supabase": "node examples/connect-supabase.js",
     "test:postgres": "node examples/connect-postgres.js",
     "test:mongodb": "node examples/connect-mongodb.js",
+    "diagnose:postgres": "node examples/diagnose-postgres.js",
     "diagnose:mongodb": "node examples/diagnose-mongodb.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
