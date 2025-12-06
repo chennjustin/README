@@ -11,6 +11,9 @@
     "test:mongodb": "node examples/connect-mongodb.js",
     "diagnose:postgres": "node examples/diagnose-postgres.js",
     "diagnose:mongodb": "node examples/diagnose-mongodb.js",
+    "db:seed": "ts-node scripts/generate-seed-data.ts",
+    "generate:types": "ts-node --esm scripts/generate-types-from-swagger.ts",
+    "validate:types": "ts-node --esm scripts/validate-types.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -23,13 +26,17 @@
   "author": "陳竑齊",
   "license": "MIT",
   "dependencies": {
-    "mongodb": "^6.0.0",
     "@supabase/supabase-js": "^2.39.0",
-    "pg": "^8.11.3",
-    "dotenv": "^16.3.1"
+    "dotenv": "^16.3.1",
+    "mongodb": "^6.0.0",
+    "pg": "^8.11.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.25",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
   },
   "engines": {
     "node": ">=14.0.0"
   }
 }
-

@@ -2021,7 +2021,7 @@ adminRouter.get(
  * /api/admin/reservations/{reservationId}/fulfill:
  *   post:
  *     summary: Fulfill a reservation
- *     description: Mark a reservation as fulfilled. Note: Actual loan creation should be done via /api/admin/loans endpoint.
+ *     description: "Mark a reservation as fulfilled. Note: Actual loan creation should be done via /api/admin/loans endpoint."
  *     tags: [Admin]
  *     security:
  *       - bearerAuth: []

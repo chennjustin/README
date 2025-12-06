@@ -11,12 +11,27 @@ if (!connectionString) {
   console.error('缺少 DATABASE_URL 或 DATABASE_POOL_URL，請在 .env 設定 Supabase/PostgreSQL 連線字串。');
 }
 
-export const pool = new Pool({
+// 判斷是否需要 SSL：如果是 Supabase 或遠端資料庫，需要 SSL
+// 本地資料庫（localhost）通常不需要 SSL
+const isRemote = connectionString && (
+  connectionString.includes('supabase') || 
+  connectionString.includes('amazonaws') ||
+  connectionString.includes('pooler') ||
+  (!connectionString.includes('localhost') && !connectionString.includes('127.0.0.1'))
+);
+
+const poolConfig: any = {
   connectionString,
-  ssl: {
+};
+
+// 只有遠端資料庫才需要 SSL
+if (isRemote) {
+  poolConfig.ssl = {
     rejectUnauthorized: false,
-  },
-});
+  };
+}
+
+export const pool = new Pool(poolConfig);
 
 export async function query<T extends QueryResultRow = any>(
   text: string | QueryConfig<any[]>,

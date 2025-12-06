@@ -28,15 +28,29 @@ function getPostgresPool() {
   }
   
   if (!postgresPool) {
-    postgresPool = new Pool({
-      connectionString: postgresConfig.connectionString,
-      ssl: {
-        rejectUnauthorized: false // Supabase 需要 SSL
-      },
+    // 判斷是否需要 SSL：如果是 Supabase 或遠端資料庫，需要 SSL
+    // 本地資料庫（localhost）通常不需要 SSL
+    const connectionString = postgresConfig.connectionString;
+    const isRemote = connectionString.includes('supabase') || 
+                     connectionString.includes('amazonaws') ||
+                     connectionString.includes('pooler') ||
+                     (!connectionString.includes('localhost') && !connectionString.includes('127.0.0.1'));
+    
+    const poolConfig = {
+      connectionString: connectionString,
       max: 20, // 最大連接數
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 2000,
-    });
+    };
+    
+    // 只有遠端資料庫才需要 SSL
+    if (isRemote) {
+      poolConfig.ssl = {
+        rejectUnauthorized: false // Supabase 需要 SSL
+      };
+    }
+    
+    postgresPool = new Pool(poolConfig);
   }
   
   return postgresPool;
