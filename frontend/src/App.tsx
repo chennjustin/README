@@ -13,6 +13,7 @@ import { MemberStatsPage } from './pages/member/MemberStatsPage';
 import { AdminLoginPage } from './pages/admin/AdminLoginPage';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { AdminMembersPage } from './pages/admin/AdminMembersPage';
+import { AdminMemberDetailPage } from './pages/admin/AdminMemberDetailPage';
 import { AdminBorrowPage } from './pages/admin/AdminBorrowPage';
 import { AdminReturnPage } from './pages/admin/AdminReturnPage';
 import { AdminReservationsPage } from './pages/admin/AdminReservationsPage';
@@ -446,6 +447,14 @@ function AppShell() {
               element={
                 <ProtectedAdminRoute>
                   <AdminMembersPage />
+                </ProtectedAdminRoute>
+              }
+            />
+            <Route
+              path="/admin/members/:memberId"
+              element={
+                <ProtectedAdminRoute>
+                  <AdminMemberDetailPage />
                 </ProtectedAdminRoute>
               }
             />

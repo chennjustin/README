@@ -1288,4 +1288,305 @@ adminRouter.get(
 
 // A10 報表：直接共用 /api/stats 下端點，由前端決定呼叫哪個路徑
 
+// A11: 搜尋會員
+adminRouter.get(
+  '/members/search',
+  requireAdmin,
+  async (req: AuthedRequest, res: Response<ApiResponse<any>>, next: NextFunction) => {
+    try {
+      const memberId = req.query.memberId as string | undefined;
+      const name = req.query.name as string | undefined;
+
+      const params: any[] = [];
+      const conditions: string[] = [];
+
+      if (memberId) {
+        const id = Number(memberId);
+        if (Number.isFinite(id)) {
+          params.push(id);
+          conditions.push(`m.member_id = $${params.length}`);
+        }
+      }
+
+      if (name) {
+        params.push(`%${name}%`);
+        conditions.push(`m.name ILIKE $${params.length}`);
+      }
+
+      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+      const sql = `
+        SELECT 
+          m.member_id,
+          m.name,
+          m.phone,
+          m.email,
+          m.status,
+          m.balance,
+          m.join_date
+        FROM MEMBER m
+        ${whereClause}
+        ORDER BY m.member_id ASC
+        LIMIT 100
+      `;
+
+      const result = await query(sql, params);
+      return res.json({ success: true, data: result.rows });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// A12: 取得會員詳細資訊
+adminRouter.get(
+  '/members/:memberId',
+  requireAdmin,
+  async (req: AuthedRequest, res: Response<ApiResponse<any>>, next: NextFunction) => {
+    try {
+      const memberId = Number(req.params.memberId);
+      if (!Number.isFinite(memberId)) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'INVALID_INPUT', message: 'memberId 格式錯誤' },
+        });
+      }
+
+      const memberSql = `
+        SELECT 
+          m.*,
+          l.level_id,
+          l.level_name,
+          l.discount_rate,
+          l.max_book_allowed,
+          l.hold_days,
+          l.min_balance_required
+        FROM MEMBER m
+        JOIN MEMBERSHIP_LEVEL l ON m.level_id = l.level_id
+        WHERE m.member_id = $1
+      `;
+      const memberResult = await query(memberSql, [memberId]);
+      if (memberResult.rowCount === 0) {
+        return res.status(404).json({
+          success: false,
+          error: { code: 'MEMBER_NOT_FOUND', message: '找不到會員' },
+        });
+      }
+
+      const topUpSql = `
+        SELECT 
+          t.top_up_id,
+          t.amount,
+          t.top_up_date,
+          a.name AS admin_name
+        FROM TOP_UP t
+        JOIN ADMIN a ON t.admin_id = a.admin_id
+        WHERE t.member_id = $1
+        ORDER BY t.top_up_date DESC, t.top_up_id DESC
+      `;
+      const topUpResult = await query(topUpSql, [memberId]);
+
+      return res.json({
+        success: true,
+        data: {
+          ...memberResult.rows[0],
+          top_ups: topUpResult.rows,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// A13: 新增儲值
+adminRouter.post(
+  '/members/:memberId/top-up',
+  requireAdmin,
+  async (req: AuthedRequest, res: Response<ApiResponse<any>>, next: NextFunction) => {
+    try {
+      const memberId = Number(req.params.memberId);
+      const { amount } = req.body || {};
+      const adminId = req.admin!.admin_id;
+
+      if (!Number.isFinite(memberId) || typeof amount !== 'number' || amount <= 0) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'INVALID_INPUT', message: 'memberId 或 amount 格式錯誤' },
+        });
+      }
+
+      const result = await withTransaction(async (client) => {
+        // Check if member exists
+        const memberCheckSql = `SELECT member_id, status FROM MEMBER WHERE member_id = $1 FOR UPDATE`;
+        const memberCheckRes = await client.query(memberCheckSql, [memberId]);
+        if (memberCheckRes.rowCount === 0) {
+          throw {
+            type: 'business',
+            status: 404,
+            code: 'MEMBER_NOT_FOUND',
+            message: '找不到會員',
+          };
+        }
+
+        // Insert TOP_UP record
+        const topUpSql = `
+          INSERT INTO TOP_UP (member_id, admin_id, amount, top_up_date)
+          VALUES ($1, $2, $3, CURRENT_DATE)
+          RETURNING *
+        `;
+        const topUpRes = await client.query(topUpSql, [memberId, adminId, amount]);
+
+        // Update member balance
+        const updateBalanceSql = `
+          UPDATE MEMBER
+          SET balance = balance + $1
+          WHERE member_id = $2
+          RETURNING balance
+        `;
+        const balanceRes = await client.query(updateBalanceSql, [amount, memberId]);
+        const newBalance = Number(balanceRes.rows[0].balance);
+
+        // Determine new membership level based on single top-up amount
+        const levelSql = `
+          SELECT level_id
+          FROM MEMBERSHIP_LEVEL
+          WHERE min_balance_required <= $1
+          ORDER BY min_balance_required DESC
+          LIMIT 1
+        `;
+        const levelRes = await client.query(levelSql, [amount]);
+        if (levelRes.rowCount > 0) {
+          const newLevelId = levelRes.rows[0].level_id;
+          const updateLevelSql = `
+            UPDATE MEMBER
+            SET level_id = $1
+            WHERE member_id = $2
+            RETURNING level_id
+          `;
+          await client.query(updateLevelSql, [newLevelId, memberId]);
+        }
+
+        // Get updated member info
+        const memberSql = `
+          SELECT 
+            m.*,
+            l.level_name,
+            l.discount_rate,
+            l.max_book_allowed,
+            l.hold_days
+          FROM MEMBER m
+          JOIN MEMBERSHIP_LEVEL l ON m.level_id = l.level_id
+          WHERE m.member_id = $1
+        `;
+        const memberRes = await client.query(memberSql, [memberId]);
+
+        return {
+          top_up: topUpRes.rows[0],
+          member: memberRes.rows[0],
+        };
+      });
+
+      return res.status(201).json({ success: true, data: result });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// A14: 取得會員借閱紀錄
+adminRouter.get(
+  '/members/:memberId/loans',
+  requireAdmin,
+  async (req: AuthedRequest, res: Response<ApiResponse<any>>, next: NextFunction) => {
+    try {
+      const memberId = Number(req.params.memberId);
+      if (!Number.isFinite(memberId)) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'INVALID_INPUT', message: 'memberId 格式錯誤' },
+        });
+      }
+
+      const sql = `
+        SELECT 
+          bl.loan_id,
+          bl.final_price,
+          bl.member_id,
+          a.name AS admin_name,
+          MIN(lr.date_out) AS loan_date,
+          COUNT(lr.loan_id) AS item_count,
+          COUNT(CASE WHEN lr.return_date IS NULL THEN 1 END) AS active_count
+        FROM BOOK_LOAN bl
+        JOIN ADMIN a ON bl.admin_id = a.admin_id
+        LEFT JOIN LOAN_RECORD lr ON bl.loan_id = lr.loan_id
+        WHERE bl.member_id = $1
+        GROUP BY bl.loan_id, bl.final_price, bl.member_id, a.name
+        ORDER BY bl.loan_id DESC
+      `;
+
+      const result = await query(sql, [memberId]);
+      return res.json({ success: true, data: result.rows });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// A15: 取得借閱紀錄詳情
+adminRouter.get(
+  '/loans/:loanId/records',
+  requireAdmin,
+  async (req: AuthedRequest, res: Response<ApiResponse<any>>, next: NextFunction) => {
+    try {
+      const loanId = Number(req.params.loanId);
+      if (!Number.isFinite(loanId)) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'INVALID_INPUT', message: 'loanId 格式錯誤' },
+        });
+      }
+
+      const sql = `
+        SELECT 
+          lr.loan_id,
+          lr.book_id,
+          lr.copies_serial,
+          lr.date_out,
+          lr.due_date,
+          lr.return_date,
+          lr.rental_fee,
+          lr.renew_cnt,
+          b.name AS book_name,
+          b.author,
+          b.publisher,
+          bc.book_condition,
+          COALESCE((
+            SELECT json_agg(
+              json_build_object(
+                'type', af.type,
+                'amount', af.amount,
+                'date', af.date
+              )
+            )
+            FROM ADD_FEE af
+            WHERE af.loan_id = lr.loan_id
+              AND af.book_id = lr.book_id
+              AND af.copies_serial = lr.copies_serial
+          ), '[]'::json) AS add_fees
+        FROM LOAN_RECORD lr
+        JOIN BOOK b ON lr.book_id = b.book_id
+        JOIN BOOK_COPIES bc ON lr.book_id = bc.book_id AND lr.copies_serial = bc.copies_serial
+        WHERE lr.loan_id = $1
+        ORDER BY lr.date_out DESC, lr.book_id ASC, lr.copies_serial ASC
+      `;
+
+      const result = await query(sql, [loanId]);
+      return res.json({ success: true, data: result.rows });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 
