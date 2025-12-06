@@ -10,6 +10,7 @@ import { MemberLoansActivePage } from './pages/member/MemberLoansActivePage';
 import { MemberLoansHistoryPage } from './pages/member/MemberLoansHistoryPage';
 import { MemberStatsPage } from './pages/member/MemberStatsPage';
 import { AdminLoginPage } from './pages/admin/AdminLoginPage';
+import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { AdminMembersPage } from './pages/admin/AdminMembersPage';
 import { AdminBorrowPage } from './pages/admin/AdminBorrowPage';
 import { AdminReturnPage } from './pages/admin/AdminReturnPage';
@@ -23,6 +24,17 @@ function ProtectedMemberRoute({ children }: { children: React.ReactElement }) {
   // Strict validation: memberId must be a valid positive integer
   if (!memberId || !Number.isFinite(memberId) || memberId <= 0) {
     return <Navigate to="/member/login" replace />;
+  }
+  return children;
+}
+
+// Protected route component for admin pages
+// Defined at module level to ensure stable component definition
+function ProtectedAdminRoute({ children }: { children: React.ReactElement }) {
+  const { admin } = useAdmin();
+  // Check if admin is logged in (admin exists)
+  if (!admin) {
+    return <Navigate to="/admin/login" replace />;
   }
   return children;
 }
@@ -208,8 +220,7 @@ function AppShell() {
                 // Show only login page when not logged in
                 <>
                   <NavLink
-                    to="/admin"
-                    end
+                    to="/admin/login"
                     className={({ isActive }) =>
                       'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
                     }
@@ -261,12 +272,55 @@ function AppShell() {
             />
             <Route path="/member/stats" element={<MemberStatsPage />} />
 
-            <Route path="/admin" element={<AdminLoginPage />} />
-            <Route path="/admin/members" element={<AdminMembersPage />} />
-            <Route path="/admin/loans/borrow" element={<AdminBorrowPage />} />
-            <Route path="/admin/loans/return" element={<AdminReturnPage />} />
-            <Route path="/admin/reservations" element={<AdminReservationsPage />} />
-            <Route path="/admin/stats" element={<AdminStatsPage />} />
+            <Route path="/admin/login" element={<AdminLoginPage />} />
+            <Route
+              path="/admin"
+              element={
+                <ProtectedAdminRoute>
+                  <AdminDashboard />
+                </ProtectedAdminRoute>
+              }
+            />
+            <Route
+              path="/admin/members"
+              element={
+                <ProtectedAdminRoute>
+                  <AdminMembersPage />
+                </ProtectedAdminRoute>
+              }
+            />
+            <Route
+              path="/admin/loans/borrow"
+              element={
+                <ProtectedAdminRoute>
+                  <AdminBorrowPage />
+                </ProtectedAdminRoute>
+              }
+            />
+            <Route
+              path="/admin/loans/return"
+              element={
+                <ProtectedAdminRoute>
+                  <AdminReturnPage />
+                </ProtectedAdminRoute>
+              }
+            />
+            <Route
+              path="/admin/reservations"
+              element={
+                <ProtectedAdminRoute>
+                  <AdminReservationsPage />
+                </ProtectedAdminRoute>
+              }
+            />
+            <Route
+              path="/admin/stats"
+              element={
+                <ProtectedAdminRoute>
+                  <AdminStatsPage />
+                </ProtectedAdminRoute>
+              }
+            />
           </Routes>
         </main>
       </div>

@@ -1,9 +1,18 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { adminApi } from '../../api/adminApi';
 import { useAdmin } from '../../context/AdminContext';
 
 export function AdminLoginPage() {
   const { admin, setAuth } = useAdmin();
+  const navigate = useNavigate();
+  
+  // Redirect to dashboard if already logged in
+  useEffect(() => {
+    if (admin) {
+      navigate('/admin', { replace: true });
+    }
+  }, [admin, navigate]);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -16,6 +25,8 @@ export function AdminLoginPage() {
     try {
       const result = await adminApi.login(name, phone);
       setAuth(result);
+      // Redirect to admin dashboard after successful login
+      navigate('/admin', { replace: true });
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -23,14 +34,20 @@ export function AdminLoginPage() {
     }
   };
 
+  // If already logged in, redirect will happen in useEffect
+  // Show loading state while redirecting
+  if (admin) {
+    return (
+      <div className="card">
+        <div className="card-title">管理端登入</div>
+        <div className="text-muted">正在導向...</div>
+      </div>
+    );
+  }
+
   return (
     <div className="card">
       <div className="card-title">管理端登入</div>
-      {admin && (
-        <div className="text-muted">
-          目前以管理員 {admin.name} ({admin.role}) 登入。
-        </div>
-      )}
       <form onSubmit={onSubmit}>
         <div className="form-row">
           <div className="form-field">
