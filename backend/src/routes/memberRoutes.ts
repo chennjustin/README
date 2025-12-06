@@ -13,6 +13,67 @@ function getMemberId(req: Request): number | null {
   return Number.isFinite(id) ? id : null;
 }
 
+// M0: Member 登入
+memberRouter.post(
+  '/login',
+  async (req: Request, res: Response<ApiResponse<any>>, next: NextFunction) => {
+    try {
+      const { name, phone } = req.body || {};
+      if (!name || !phone) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'INVALID_INPUT', message: '缺少 name / phone' },
+        });
+      }
+
+      // First, check if the account (name) exists
+      const sql = `
+        SELECT member_id, name, phone, status
+        FROM MEMBER
+        WHERE name = $1
+      `;
+      const result = await query(sql, [name]);
+      
+      // Account not found
+      if (result.rowCount === 0) {
+        return res.status(401).json({
+          success: false,
+          error: { code: 'ACCOUNT_NOT_FOUND', message: '帳號不存在，請確認是否有權限' },
+        });
+      }
+
+      const member = result.rows[0] as any;
+
+      // Check if password (phone) matches
+      if (member.phone !== phone) {
+        return res.status(401).json({
+          success: false,
+          error: { code: 'INVALID_PASSWORD', message: '密碼錯誤' },
+        });
+      }
+
+      // Check if member status is active
+      if (member.status !== 'Active') {
+        return res.status(403).json({
+          success: false,
+          error: { code: 'MEMBER_INACTIVE', message: '會員帳號未啟用' },
+        });
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          member_id: member.member_id,
+          name: member.name,
+          phone: member.phone,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 // M1: 取得會員個人資料
 memberRouter.get(
   '/profile',

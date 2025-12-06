@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { AdminLoginResult } from '../types';
 
 interface AdminContextValue {
@@ -26,7 +26,8 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, []);
 
-  const setAuth = (auth: { admin: AdminLoginResult['admin']; token: string } | null) => {
+  // Use useCallback to stabilize the setAuth function reference
+  const setAuth = useCallback((auth: { admin: AdminLoginResult['admin']; token: string } | null) => {
     if (!auth) {
       setToken(null);
       setAdmin(null);
@@ -36,10 +37,13 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setAdmin(auth.admin);
       window.localStorage.setItem('adminAuth', JSON.stringify(auth));
     }
-  };
+  }, []);
+
+  // Use useMemo to stabilize the context value object reference
+  const value = useMemo(() => ({ admin, token, setAuth }), [admin, token, setAuth]);
 
   return (
-    <AdminContext.Provider value={{ admin, token, setAuth }}>{children}</AdminContext.Provider>
+    <AdminContext.Provider value={value}>{children}</AdminContext.Provider>
   );
 };
 

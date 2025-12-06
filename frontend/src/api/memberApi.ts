@@ -1,11 +1,14 @@
 import { api } from '../config/api';
-import { LoanItem, MemberProfile, ReservationItem } from '../types';
+import { LoanItem, MemberLoginResult, MemberProfile, ReservationItem } from '../types';
 
 export function memberHeaders(memberId: number | null): Record<string, string> {
   return memberId ? { 'x-member-id': String(memberId) } : {};
 }
 
 export const memberApi = {
+  async login(name: string, phone: string): Promise<MemberLoginResult> {
+    return api.post<MemberLoginResult>('/api/member/login', { name, phone });
+  },
   getProfile(memberId: number) {
     return api.get<MemberProfile>('/api/member/profile', memberHeaders(memberId));
   },
