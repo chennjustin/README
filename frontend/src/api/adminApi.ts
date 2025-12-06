@@ -5,6 +5,7 @@ import {
   MemberDetail,
   LoanSummary,
   LoanRecordDetail,
+  BorrowPreview,
 } from '../types';
 
 export const adminApi = {
@@ -92,6 +93,21 @@ export const adminApi = {
   },
   getLoanRecords(token: string, loanId: number): Promise<LoanRecordDetail[]> {
     return api.get<LoanRecordDetail[]>(`/api/admin/loans/${loanId}/records`, this.headers(token));
+  },
+  getBorrowPreview(
+    token: string,
+    memberId: number,
+    bookId: number,
+    copiesSerial: number
+  ): Promise<BorrowPreview> {
+    const params = new URLSearchParams();
+    params.append('member_id', String(memberId));
+    params.append('book_id', String(bookId));
+    params.append('copies_serial', String(copiesSerial));
+    return api.get<BorrowPreview>(
+      `/api/admin/borrow/preview?${params.toString()}`,
+      this.headers(token)
+    );
   },
 };
 

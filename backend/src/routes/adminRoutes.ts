@@ -614,6 +614,99 @@ adminRouter.patch(
   }
 );
 
+// A5: 櫃檯借書預覽（計算租金、驗證狀態）
+adminRouter.get(
+  '/borrow/preview',
+  requireAdmin,
+  async (req: AuthedRequest, res: Response<ApiResponse<any>>, next: NextFunction) => {
+    try {
+      const memberId = Number(req.query.member_id);
+      const bookId = Number(req.query.book_id);
+      const copiesSerial = Number(req.query.copies_serial);
+
+      if (!Number.isFinite(memberId) || !Number.isFinite(bookId) || !Number.isFinite(copiesSerial)) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'INVALID_INPUT', message: 'member_id、book_id、copies_serial 必須為有效數字' },
+        });
+      }
+
+      // Query member and membership level
+      const memberSql = `
+        SELECT 
+          m.member_id,
+          m.status,
+          l.discount_rate
+        FROM MEMBER m
+        JOIN MEMBERSHIP_LEVEL l ON m.level_id = l.level_id
+        WHERE m.member_id = $1
+      `;
+      const memberRes = await query(memberSql, [memberId]);
+      if (memberRes.rowCount === 0) {
+        return res.status(404).json({
+          success: false,
+          error: { code: 'MEMBER_NOT_FOUND', message: '找不到會員' },
+        });
+      }
+      const member = memberRes.rows[0];
+
+      if (member.status !== 'Active') {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'MEMBER_INACTIVE', message: '會員狀態不可借書' },
+        });
+      }
+
+      // Query book copy information
+      const copySql = `
+        SELECT 
+          bc.book_id,
+          bc.copies_serial,
+          bc.status,
+          bc.rental_price,
+          bc.book_condition,
+          b.name AS book_name
+        FROM BOOK_COPIES bc
+        JOIN BOOK b ON bc.book_id = b.book_id
+        WHERE bc.book_id = $1 AND bc.copies_serial = $2
+      `;
+      const copyRes = await query(copySql, [bookId, copiesSerial]);
+      if (copyRes.rowCount === 0) {
+        return res.status(404).json({
+          success: false,
+          error: { code: 'COPY_NOT_FOUND', message: '找不到書籍複本' },
+        });
+      }
+      const copy = copyRes.rows[0];
+
+      if (copy.status !== 'Available') {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'COPY_NOT_AVAILABLE', message: '複本不可借出' },
+        });
+      }
+
+      // Calculate rental fee: rental_price * discount_rate
+      const rentalPrice = Number(copy.rental_price);
+      const discountRate = Number(member.discount_rate);
+      const rentalFee = Math.round(rentalPrice * discountRate);
+
+      return res.json({
+        success: true,
+        data: {
+          book_id: copy.book_id,
+          copies_serial: copy.copies_serial,
+          book_name: copy.book_name,
+          status: copy.status,
+          rental_fee: rentalFee,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 // A5: 櫃檯辦理借書
 adminRouter.post(
   '/loans',

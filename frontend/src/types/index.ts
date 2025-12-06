@@ -169,4 +169,12 @@ export interface LoanRecordDetail {
   add_fees: AddFee[];
 }
 
+export interface BorrowPreview {
+  book_id: number;
+  copies_serial: number;
+  book_name: string;
+  status: string;
+  rental_fee: number;
+}
+
 
