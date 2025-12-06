@@ -39,7 +39,7 @@ bookRouter.get(
       let discountJoin = '';
       let discountSelect = 'NULL::DECIMAL AS discount_rate';
       let discountGroupBy = '';
-      let estimatedPriceExpr = 'NULL AS estimated_min_rental_price';
+      let estimatedPriceExpr = 'available_stats.min_rental_price AS estimated_min_rental_price';
       if (memberId) {
         const idx = params.push(Number(memberId));
         discountJoin = `
@@ -70,11 +70,13 @@ bookRouter.get(
         LEFT JOIN CATEGORY c ON bc.category_id = c.category_id
         LEFT JOIN (
           SELECT 
-            book_id,
-            COUNT(*) FILTER (WHERE status = 'Available') AS available_count,
-            MIN(rental_price) AS min_rental_price
-          FROM BOOK_COPIES
-          GROUP BY book_id
+            bc.book_id,
+            COUNT(*) FILTER (WHERE bc.status = 'Available') AS available_count,
+            MIN(b.price * cd.discount_factor)::INTEGER AS min_rental_price
+          FROM BOOK_COPIES bc
+          JOIN BOOK b ON bc.book_id = b.book_id
+          JOIN CONDITION_DISCOUNT cd ON bc.book_condition = cd.book_condition
+          GROUP BY bc.book_id
         ) AS available_stats ON available_stats.book_id = b.book_id
         ${discountJoin}
         ${whereClause}
@@ -162,15 +164,17 @@ bookRouter.get(
 
       const copiesSql = `
         SELECT 
-          book_condition,
-          rental_price,
-          COUNT(*) FILTER (WHERE status = 'Available') AS available_count,
+          bc.book_condition,
+          (b.price * cd.discount_factor)::INTEGER AS rental_price,
+          COUNT(*) FILTER (WHERE bc.status = 'Available') AS available_count,
           $2::DECIMAL AS discount_rate,
-          rental_price * $2::DECIMAL AS discounted_rental_price
-        FROM BOOK_COPIES
-        WHERE book_id = $1
-        GROUP BY book_condition, rental_price
-        ORDER BY book_condition, rental_price
+          (b.price * cd.discount_factor * $2::DECIMAL)::INTEGER AS discounted_rental_price
+        FROM BOOK_COPIES bc
+        JOIN BOOK b ON bc.book_id = b.book_id
+        JOIN CONDITION_DISCOUNT cd ON bc.book_condition = cd.book_condition
+        WHERE bc.book_id = $1
+        GROUP BY bc.book_condition, b.price, cd.discount_factor
+        ORDER BY bc.book_condition, rental_price
       `;
       const copiesRes = await query(copiesSql, [bookId, discountRate]);
 
