@@ -1,4 +1,4 @@
-import { FormEvent, useState, useEffect, useRef } from 'react';
+import { FormEvent, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { memberApi } from '../../api/memberApi';
 import { useMember } from '../../context/MemberContext';
@@ -10,14 +10,10 @@ export function MemberLoginPage() {
   const [phone, setPhone] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const pendingMemberId = useRef<number | null>(null);
-
-  // Navigate after memberId is updated in context
+  // Redirect to /member if logged in (either already logged in or just logged in)
   useEffect(() => {
-    if (pendingMemberId.current !== null && memberId === pendingMemberId.current) {
-      // State has been updated in context, now navigate
-      pendingMemberId.current = null;
-      navigate('/member');
+    if (memberId !== null && Number.isFinite(memberId) && memberId > 0) {
+      navigate('/member', { replace: true });
     }
   }, [memberId, navigate]);
 
@@ -27,9 +23,7 @@ export function MemberLoginPage() {
     setError(null);
     try {
       const result = await memberApi.login(name, phone);
-      // Set pending memberId and update context state
-      // Navigation will happen in useEffect when state is updated
-      pendingMemberId.current = result.member_id;
+      // Update context state, navigation will happen in useEffect when state is updated
       setMemberId(result.member_id);
     } catch (e: any) {
       // Handle specific error messages from backend
@@ -40,30 +34,18 @@ export function MemberLoginPage() {
       } else {
         setError('登入失敗，請稍後再試');
       }
-      pendingMemberId.current = null;
     } finally {
       setLoading(false);
     }
   };
 
-  // If already logged in, show current status
-  if (memberId) {
+  // If already logged in, redirect will happen in useEffect
+  // Show loading state while redirecting
+  if (memberId !== null && Number.isFinite(memberId) && memberId > 0) {
     return (
       <div className="card">
         <div className="card-title">會員登入</div>
-        <div className="text-muted">
-          您已經登入，member_id: {memberId}
-        </div>
-        <button
-          className="btn btn-secondary"
-          onClick={() => {
-            setMemberId(null);
-            setName('');
-            setPhone('');
-          }}
-        >
-          登出
-        </button>
+        <div className="text-muted">正在導向...</div>
       </div>
     );
   }
