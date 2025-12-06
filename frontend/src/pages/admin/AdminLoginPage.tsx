@@ -6,7 +6,6 @@ export function AdminLoginPage() {
   const { admin, setAuth } = useAdmin();
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -15,7 +14,7 @@ export function AdminLoginPage() {
     setLoading(true);
     setError(null);
     try {
-      const result = await adminApi.login(name, phone, password);
+      const result = await adminApi.login(name, phone);
       setAuth(result);
     } catch (e: any) {
       setError(e.message);
@@ -35,28 +34,22 @@ export function AdminLoginPage() {
       <form onSubmit={onSubmit}>
         <div className="form-row">
           <div className="form-field">
-            <label className="form-label">姓名</label>
+            <label className="form-label">帳號 (姓名)</label>
             <input
               className="form-input"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              placeholder="請輸入姓名"
             />
           </div>
           <div className="form-field">
-            <label className="form-label">電話</label>
-            <input
-              className="form-input"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-            />
-          </div>
-          <div className="form-field">
-            <label className="form-label">密碼</label>
+            <label className="form-label">密碼 (手機號碼)</label>
             <input
               className="form-input"
               type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="請輸入手機號碼"
             />
           </div>
         </div>

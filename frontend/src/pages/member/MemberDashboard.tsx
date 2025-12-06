@@ -4,8 +4,7 @@ import { useMember } from '../../context/MemberContext';
 import { MemberProfile } from '../../types';
 
 export function MemberDashboard() {
-  const { memberId, setMemberId } = useMember();
-  const [inputId, setInputId] = useState(memberId ? String(memberId) : '');
+  const { memberId } = useMember();
   const [profile, setProfile] = useState<MemberProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -30,41 +29,8 @@ export function MemberDashboard() {
     }
   }, [memberId]);
 
-  const handleSetMember = () => {
-    const id = Number(inputId);
-    if (!Number.isFinite(id) || id <= 0) {
-      setError('請輸入有效的 member_id（正整數）');
-      return;
-    }
-    setMemberId(id);
-  };
-
   return (
     <>
-      <div className="card">
-        <div className="card-title">會員登入（模擬）</div>
-        <div className="form-row">
-          <div className="form-field">
-            <label className="form-label">Member ID</label>
-            <input
-              className="form-input"
-              value={inputId}
-              onChange={(e) => setInputId(e.target.value)}
-              placeholder="輸入 member_id"
-            />
-          </div>
-          <div className="form-field" style={{ justifyContent: 'flex-end' }}>
-            <button className="btn btn-primary" onClick={handleSetMember}>
-              使用此 ID
-            </button>
-          </div>
-        </div>
-        {error && <div className="error-text">{error}</div>}
-        {memberId && (
-          <div className="text-muted">目前使用中的 member_id：{memberId}</div>
-        )}
-      </div>
-
       <div className="card">
         <div className="card-title">會員基本資料與等級</div>
         {loading && <div className="text-muted">載入中...</div>}

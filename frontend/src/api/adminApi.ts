@@ -2,8 +2,8 @@ import { api } from '../config/api';
 import { AdminLoginResult } from '../types';
 
 export const adminApi = {
-  async login(name: string, phone: string, password: string): Promise<AdminLoginResult> {
-    return api.post<AdminLoginResult>('/api/admin/login', { name, phone, password });
+  async login(name: string, phone: string): Promise<AdminLoginResult> {
+    return api.post<AdminLoginResult>('/api/admin/login', { name, phone });
   },
   headers(token: string | null): Record<string, string> {
     return token ? { Authorization: `Bearer ${token}` } : {};

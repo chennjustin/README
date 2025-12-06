@@ -1,7 +1,8 @@
-import { NavLink, Route, Routes, useLocation } from 'react-router-dom';
-import { MemberProvider } from './context/MemberContext';
+import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { MemberProvider, useMember } from './context/MemberContext';
 import { AdminProvider } from './context/AdminContext';
 import { MemberDashboard } from './pages/member/MemberDashboard';
+import { MemberLoginPage } from './pages/member/MemberLoginPage';
 import { BookSearchPage } from './pages/member/BookSearchPage';
 import { BookDetailPage } from './pages/member/BookDetailPage';
 import { MemberReservationsPage } from './pages/member/MemberReservationsPage';
@@ -14,6 +15,17 @@ import { AdminBorrowPage } from './pages/admin/AdminBorrowPage';
 import { AdminReturnPage } from './pages/admin/AdminReturnPage';
 import { AdminReservationsPage } from './pages/admin/AdminReservationsPage';
 import { AdminStatsPage } from './pages/admin/AdminStatsPage';
+
+// Protected route component for member pages
+// Defined at module level to ensure stable component definition
+function ProtectedMemberRoute({ children }: { children: React.ReactElement }) {
+  const { memberId } = useMember();
+  // Strict validation: memberId must be a valid positive integer
+  if (!memberId || !Number.isFinite(memberId) || memberId <= 0) {
+    return <Navigate to="/member/login" replace />;
+  }
+  return children;
+}
 
 function AppShell() {
   const location = useLocation();
@@ -154,13 +166,42 @@ function AppShell() {
         </aside>
         <main className="app-content">
           <Routes>
-            <Route path="/" element={<MemberDashboard />} />
-            <Route path="/member" element={<MemberDashboard />} />
+            <Route path="/" element={<Navigate to="/member/login" replace />} />
+            <Route path="/member/login" element={<MemberLoginPage />} />
+            <Route
+              path="/member"
+              element={
+                <ProtectedMemberRoute>
+                  <MemberDashboard />
+                </ProtectedMemberRoute>
+              }
+            />
             <Route path="/member/books" element={<BookSearchPage />} />
             <Route path="/member/books/:bookId" element={<BookDetailPage />} />
-            <Route path="/member/reservations" element={<MemberReservationsPage />} />
-            <Route path="/member/loans/active" element={<MemberLoansActivePage />} />
-            <Route path="/member/loans/history" element={<MemberLoansHistoryPage />} />
+            <Route
+              path="/member/reservations"
+              element={
+                <ProtectedMemberRoute>
+                  <MemberReservationsPage />
+                </ProtectedMemberRoute>
+              }
+            />
+            <Route
+              path="/member/loans/active"
+              element={
+                <ProtectedMemberRoute>
+                  <MemberLoansActivePage />
+                </ProtectedMemberRoute>
+              }
+            />
+            <Route
+              path="/member/loans/history"
+              element={
+                <ProtectedMemberRoute>
+                  <MemberLoansHistoryPage />
+                </ProtectedMemberRoute>
+              }
+            />
             <Route path="/member/stats" element={<MemberStatsPage />} />
 
             <Route path="/admin" element={<AdminLoginPage />} />

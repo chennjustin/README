@@ -97,4 +97,10 @@ export interface AdminLoginResult {
   };
 }
 
+export interface MemberLoginResult {
+  member_id: number;
+  name: string;
+  phone: string;
+}
+
 

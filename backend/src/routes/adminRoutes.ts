@@ -1,6 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
 import { query, withTransaction } from '../db';
 import { ApiResponse, AuthAdmin } from '../types';
 
@@ -38,45 +37,46 @@ adminRouter.post(
   '/login',
   async (req: Request, res: Response<ApiResponse<any>>, next: NextFunction) => {
     try {
-      const { name, phone, password } = req.body || {};
-      if (!name || !phone || !password) {
+      const { name, phone } = req.body || {};
+      if (!name || !phone) {
         return res.status(400).json({
           success: false,
-          error: { code: 'INVALID_INPUT', message: '缺少 name / phone / password' },
+          error: { code: 'INVALID_INPUT', message: '缺少 name / phone' },
         });
       }
 
-      // 假設 ADMIN 表中有 password_hash 欄位；若沒有，可以改為純比對 phone
+      // First, check if the account (name) exists
       const sql = `
-        SELECT admin_id, name, phone, role, status, password_hash
+        SELECT admin_id, name, phone, role, status
         FROM ADMIN
-        WHERE name = $1 AND phone = $2
+        WHERE name = $1
       `;
-      const result = await query(sql, [name, phone]);
+      const result = await query(sql, [name]);
+      
+      // Account not found
       if (result.rowCount === 0) {
         return res.status(401).json({
           success: false,
-          error: { code: 'INVALID_CREDENTIALS', message: '帳號或密碼錯誤' },
+          error: { code: 'ACCOUNT_NOT_FOUND', message: '帳號不存在，請確認是否有權限' },
         });
       }
 
       const admin = result.rows[0] as any;
 
+      // Check if password (phone) matches
+      if (admin.phone !== phone) {
+        return res.status(401).json({
+          success: false,
+          error: { code: 'INVALID_PASSWORD', message: '密碼錯誤' },
+        });
+      }
+
+      // Check if admin status is active
       if (admin.status !== 'Active') {
         return res.status(403).json({
           success: false,
           error: { code: 'ADMIN_INACTIVE', message: '管理員帳號未啟用' },
         });
-      }
-
-      if (admin.password_hash) {
-        const ok = await bcrypt.compare(password, admin.password_hash);
-        if (!ok) {
-          return res.status(401).json({
-            success: false,
-            error: { code: 'INVALID_CREDENTIALS', message: '帳號或密碼錯誤' },
-          });
-        }
       }
 
       const token = jwt.sign({ admin_id: admin.admin_id }, JWT_SECRET, { expiresIn: '8h' });
