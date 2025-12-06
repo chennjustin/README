@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { booksApi } from '../../api/booksApi';
 import { useMember } from '../../context/MemberContext';
 import { BookDetail } from '../../types';
+import { ReservationModal } from '../../components/ReservationModal';
 
 export function BookDetailPage() {
   const { bookId } = useParams();
+  const navigate = useNavigate();
   const { memberId } = useMember();
   const [book, setBook] = useState<BookDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showReservationModal, setShowReservationModal] = useState(false);
 
   useEffect(() => {
     if (!bookId) return;
@@ -93,7 +96,38 @@ export function BookDetailPage() {
               ))}
             </tbody>
           </table>
+          <div className="spacer-md" />
+          {memberId && (
+            <div className="book-detail-actions">
+              <button
+                className="btn btn-primary"
+                onClick={() => setShowReservationModal(true)}
+                disabled={!book || book.copies.every((c) => c.available_count === 0)}
+              >
+                預約書籍
+              </button>
+            </div>
+          )}
+          {!memberId && (
+            <div className="text-muted">
+              請先登入會員才能預約書籍
+            </div>
+          )}
         </>
+      )}
+      {book && memberId && (
+        <ReservationModal
+          isOpen={showReservationModal}
+          onClose={() => setShowReservationModal(false)}
+          onConfirm={() => {
+            setShowReservationModal(false);
+            navigate('/member/reservations');
+          }}
+          bookName={book.name}
+          bookId={book.book_id}
+          estimatedRental={book.copies.length > 0 ? Math.min(...book.copies.map((c) => Math.round(c.discounted_rental_price))) : book.price}
+          memberId={memberId}
+        />
       )}
     </div>
   );

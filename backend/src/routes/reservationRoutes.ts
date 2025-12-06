@@ -83,18 +83,22 @@ reservationRouter.post(
           };
         }
 
-        // 理論租金：BOOK.price × CONDITION_DISCOUNT.discount_factor × MEMBERSHIP_LEVEL.discount_rate
+        // 理論租金：使用每本書的最低租金（BOOK.price × 最低 discount_factor × MEMBERSHIP_LEVEL.discount_rate）
+        // 因為預約時不知道會拿到哪個書況的書，所以使用最低租金來估算
         const theorySql = `
           SELECT 
-            SUM(b.price * cd.discount_factor * $2::DECIMAL) AS total_theoretical
+            SUM(
+              b.price * 
+              (SELECT MIN(discount_factor) FROM CONDITION_DISCOUNT) * 
+              $2::DECIMAL
+            ) AS total_theoretical
           FROM BOOK b
-          CROSS JOIN CONDITION_DISCOUNT cd
           WHERE b.book_id = ANY($1::BIGINT[])
         `;
         const theoryRes = await client.query(theorySql, [book_ids, member.discount_rate]);
         const theoreticalTotal = Number(theoryRes.rows[0].total_theoretical) || 0;
 
-        const allCostEstimate = theoreticalTotal; // 簡化：只估這次預約的理論租金
+        const allCostEstimate = theoreticalTotal; // 使用最低租金估算
 
         if (member.balance < allCostEstimate) {
           throw {

@@ -4,6 +4,13 @@
   --berkeley-light: #f7f7f7;
   --berkeley-gray: #e0e0e0;
   --berkeley-text: #1f2933;
+  /* 現代化設計色彩 */
+  --primary-green: #10b981;
+  --light-green: #d1fae5;
+  --sidebar-bg: #f8fafc;
+  --sidebar-hover: #e2e8f0;
+  --card-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  --card-shadow-hover: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
 
 *,
@@ -31,105 +38,325 @@ a {
 }
 
 .app-header {
-  background: var(--berkeley-blue);
-  color: white;
-  padding: 0.75rem 1.5rem;
+  background: white;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 1rem 1.5rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.app-header-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.app-sidebar-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 6px;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.app-sidebar-toggle:hover {
+  background: #f3f4f6;
+  color: #111827;
 }
 
 .app-header-title {
-  font-size: 1.25rem;
-  font-weight: 600;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
 }
 
-.app-header-nav {
+.app-header-right {
   display: flex;
+  align-items: center;
   gap: 1rem;
-  font-size: 0.95rem;
 }
 
-.app-header-link {
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
+.app-header-search {
+  display: flex;
+  align-items: center;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  gap: 0.5rem;
+  min-width: 250px;
 }
 
-.app-header-link-active {
-  background-color: rgba(253, 181, 21, 0.2);
-  border-bottom: 2px solid var(--berkeley-gold);
+.app-header-search svg {
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+
+.app-header-search input {
+  border: none;
+  background: transparent;
+  outline: none;
+  flex: 1;
+  font-size: 0.875rem;
+  color: #111827;
+}
+
+.app-header-search input::placeholder {
+  color: #9ca3af;
+}
+
+.app-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.app-header-icon-btn {
+  background: #f9fafb;
+  border: none;
+  border-radius: 8px;
+  padding: 0.5rem;
+  cursor: pointer;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.app-header-icon-btn:hover {
+  background: #f3f4f6;
+  color: #111827;
+}
+
+.app-header-profile {
+  display: flex;
+  align-items: center;
+}
+
+.app-header-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary-green), #059669);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.app-header-avatar:hover {
+  transform: scale(1.05);
 }
 
 .app-layout {
   display: grid;
-  grid-template-columns: 220px 1fr;
-  min-height: calc(100vh - 56px);
+  grid-template-columns: 260px 1fr;
+  min-height: calc(100vh - 73px);
+  transition: grid-template-columns 0.3s ease;
+}
+
+.app-layout.sidebar-collapsed {
+  grid-template-columns: 80px 1fr;
 }
 
 .app-sidebar {
-  background: #f1f3f6;
-  border-right: 1px solid var(--berkeley-gray);
-  padding: 1rem 0.5rem;
+  background: var(--sidebar-bg);
+  border-right: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 73px;
+  height: calc(100vh - 73px);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
-.app-sidebar-section-title {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #6b7280;
-  padding: 0.25rem 0.75rem;
-  text-transform: uppercase;
+.app-sidebar-content {
+  flex: 1;
+  padding: 1rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 
 .app-sidebar-link {
-  display: block;
-  padding: 0.4rem 0.8rem;
-  border-radius: 4px;
-  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  color: #64748b;
+  transition: all 0.2s;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.app-sidebar-link svg {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+}
+
+.app-sidebar-link:hover {
+  background: var(--sidebar-hover);
   color: #111827;
 }
 
 .app-sidebar-link-active {
-  background-color: white;
-  border-left: 3px solid var(--berkeley-blue);
+  background: white;
+  color: var(--primary-green);
+  font-weight: 600;
+  box-shadow: var(--card-shadow);
+}
+
+.app-sidebar-link-active svg {
+  color: var(--primary-green);
+}
+
+.app-sidebar-link span {
+  opacity: 1;
+  transition: opacity 0.2s;
+}
+
+.app-layout.sidebar-collapsed .app-sidebar-link span {
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
 }
 
 .app-sidebar-divider {
   height: 1px;
-  background-color: var(--berkeley-gray);
-  margin: 0.75rem 0.5rem;
+  background-color: #e5e7eb;
+  margin: 0.5rem 0.75rem;
 }
 
 .app-sidebar-logout-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
   width: 100%;
-  background-color: #dc2626;
-  color: white;
+  background-color: transparent;
+  color: #dc2626;
   border: none;
-  border-radius: 4px;
-  padding: 0.5rem 0.8rem;
-  font-size: 0.9rem;
+  border-radius: 8px;
+  padding: 0.75rem;
+  font-size: 0.875rem;
   cursor: pointer;
   margin-top: 0.5rem;
-  transition: background-color 0.2s;
+  transition: all 0.2s;
+  text-align: left;
+}
+
+.app-sidebar-logout-btn svg {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
 }
 
 .app-sidebar-logout-btn:hover {
-  background-color: #b91c1c;
+  background-color: #fee2e2;
+  color: #b91c1c;
 }
 
-.app-sidebar-logout-btn:active {
-  background-color: #991b1b;
+.app-sidebar-logout-btn span {
+  opacity: 1;
+  transition: opacity 0.2s;
+}
+
+.app-layout.sidebar-collapsed .app-sidebar-logout-btn span {
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+}
+
+.app-sidebar-footer {
+  padding: 1rem 0.75rem;
+  border-top: 1px solid #e5e7eb;
+  margin-top: auto;
+}
+
+.app-sidebar-profile {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.app-sidebar-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary-green), #059669);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 0.875rem;
+  flex-shrink: 0;
+}
+
+.app-sidebar-user-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.app-sidebar-user-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #111827;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-sidebar-user-role {
+  font-size: 0.75rem;
+  color: #6b7280;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-layout.sidebar-collapsed .app-sidebar-user-info {
+  display: none;
 }
 
 .app-content {
-  padding: 1.25rem 1.75rem;
+  padding: 2rem;
+  background: #f9fafb;
+  min-height: calc(100vh - 73px);
 }
 
 .card {
   background: white;
-  border-radius: 6px;
-  border: 1px solid var(--berkeley-gray);
-  padding: 1rem 1.25rem;
-  margin-bottom: 1rem;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--card-shadow);
+  transition: box-shadow 0.2s;
+}
+
+.card:hover {
+  box-shadow: var(--card-shadow-hover);
 }
 
 .card-title {
@@ -245,4 +472,187 @@ a {
   height: 1rem;
 }
 
+/* Modal 樣式 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  width: 100%;
+  max-width: 500px;
+  max-height: 90vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.5rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.modal-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 6px;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.modal-close:hover {
+  background: #f3f4f6;
+  color: #111827;
+}
+
+.modal-body {
+  padding: 1.5rem;
+  flex: 1;
+}
+
+.modal-footer {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  padding: 1.5rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.reservation-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.reservation-detail-row {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem;
+  background: #f9fafb;
+  border-radius: 8px;
+}
+
+.reservation-detail-label {
+  font-weight: 600;
+  color: #374151;
+  min-width: 100px;
+}
+
+.reservation-detail-value {
+  color: #111827;
+  flex: 1;
+}
+
+.reservation-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  color: #991b1b;
+  margin-bottom: 1rem;
+}
+
+.reservation-warning svg {
+  flex-shrink: 0;
+}
+
+.reservation-note {
+  padding: 0.75rem;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  color: #1e40af;
+  font-size: 0.875rem;
+  margin-top: 1rem;
+}
+
+.reservation-note p {
+  margin: 0;
+}
+
+.book-detail-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+/* 響應式設計 */
+@media (max-width: 768px) {
+  .app-layout {
+    grid-template-columns: 80px 1fr;
+  }
+  
+  .app-layout.sidebar-collapsed {
+    grid-template-columns: 0 1fr;
+  }
+  
+  .app-sidebar {
+    position: fixed;
+    left: 0;
+    z-index: 200;
+    transform: translateX(0);
+    transition: transform 0.3s ease;
+  }
+  
+  .app-layout.sidebar-collapsed .app-sidebar {
+    transform: translateX(-100%);
+  }
+  
+  .app-header-search {
+    min-width: 150px;
+  }
+  
+  .app-content {
+    padding: 1rem;
+  }
+}
+
+/* 滾動條樣式 */
+.app-sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.app-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-sidebar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.app-sidebar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
 

@@ -18,6 +18,11 @@ export const pool = new Pool({
   ssl: {
     rejectUnauthorized: false,
   },
+  max: 20, // 最大連接數
+  idleTimeoutMillis: 30000, // 30 秒
+  connectionTimeoutMillis: 10000, // 10 秒連接超時
+  // 處理連接錯誤
+  allowExitOnIdle: true,
 });
 
 export async function query<T extends QueryResultRow = any>(

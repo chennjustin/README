@@ -31,6 +31,13 @@ export const memberApi = {
       memberHeaders(memberId)
     );
   },
+  createReservation(memberId: number, bookIds: number[]) {
+    return api.post(
+      '/api/reservations',
+      { member_id: memberId, book_ids: bookIds },
+      memberHeaders(memberId)
+    );
+  },
 };
 
 
