@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { memberApi } from '../../api/memberApi';
 import { useMember } from '../../context/MemberContext';
@@ -10,6 +10,16 @@ export function MemberLoginPage() {
   const [phone, setPhone] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const pendingMemberId = useRef<number | null>(null);
+
+  // Navigate after memberId is updated in context
+  useEffect(() => {
+    if (pendingMemberId.current !== null && memberId === pendingMemberId.current) {
+      // State has been updated in context, now navigate
+      pendingMemberId.current = null;
+      navigate('/member');
+    }
+  }, [memberId, navigate]);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -17,9 +27,10 @@ export function MemberLoginPage() {
     setError(null);
     try {
       const result = await memberApi.login(name, phone);
+      // Set pending memberId and update context state
+      // Navigation will happen in useEffect when state is updated
+      pendingMemberId.current = result.member_id;
       setMemberId(result.member_id);
-      // Redirect to member dashboard after successful login
-      navigate('/member');
     } catch (e: any) {
       // Handle specific error messages from backend
       // Error format from api.ts: "CODE: message"
@@ -29,6 +40,7 @@ export function MemberLoginPage() {
       } else {
         setError('登入失敗，請稍後再試');
       }
+      pendingMemberId.current = null;
     } finally {
       setLoading(false);
     }
