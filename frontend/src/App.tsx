@@ -30,6 +30,9 @@ function ProtectedMemberRoute({ children }: { children: React.ReactElement }) {
 function AppShell() {
   const location = useLocation();
   const isAdmin = location.pathname.startsWith('/admin');
+  const { memberId } = useMember();
+  // Check if member is logged in (memberId exists and is valid)
+  const isLoggedIn = memberId !== null && Number.isFinite(memberId) && memberId > 0;
 
   return (
     <div className="app-root">
@@ -59,55 +62,88 @@ function AppShell() {
           {!isAdmin ? (
             <>
               <div className="app-sidebar-section-title">Member</div>
-              <NavLink
-                to="/member"
-                end
-                className={({ isActive }) =>
-                  'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
-                }
-              >
-                個人總覽
-              </NavLink>
-              <NavLink
-                to="/member/books"
-                className={({ isActive }) =>
-                  'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
-                }
-              >
-                書籍搜尋
-              </NavLink>
-              <NavLink
-                to="/member/reservations"
-                className={({ isActive }) =>
-                  'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
-                }
-              >
-                我的預約
-              </NavLink>
-              <NavLink
-                to="/member/loans/active"
-                className={({ isActive }) =>
-                  'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
-                }
-              >
-                借閱中
-              </NavLink>
-              <NavLink
-                to="/member/loans/history"
-                className={({ isActive }) =>
-                  'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
-                }
-              >
-                歷史借閱
-              </NavLink>
-              <NavLink
-                to="/member/stats"
-                className={({ isActive }) =>
-                  'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
-                }
-              >
-                熱門排行榜
-              </NavLink>
+              {isLoggedIn ? (
+                // Show all pages when logged in
+                <>
+                  <NavLink
+                    to="/member"
+                    end
+                    className={({ isActive }) =>
+                      'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
+                    }
+                  >
+                    個人總覽
+                  </NavLink>
+                  <NavLink
+                    to="/member/books"
+                    className={({ isActive }) =>
+                      'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
+                    }
+                  >
+                    書籍搜尋
+                  </NavLink>
+                  <NavLink
+                    to="/member/reservations"
+                    className={({ isActive }) =>
+                      'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
+                    }
+                  >
+                    我的預約
+                  </NavLink>
+                  <NavLink
+                    to="/member/loans/active"
+                    className={({ isActive }) =>
+                      'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
+                    }
+                  >
+                    借閱中
+                  </NavLink>
+                  <NavLink
+                    to="/member/loans/history"
+                    className={({ isActive }) =>
+                      'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
+                    }
+                  >
+                    歷史借閱
+                  </NavLink>
+                  <NavLink
+                    to="/member/stats"
+                    className={({ isActive }) =>
+                      'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
+                    }
+                  >
+                    熱門排行榜
+                  </NavLink>
+                </>
+              ) : (
+                // Show only public pages when not logged in
+                <>
+                  <NavLink
+                    to="/member/login"
+                    className={({ isActive }) =>
+                      'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
+                    }
+                  >
+                    會員登入
+                  </NavLink>
+                  <NavLink
+                    to="/member/books"
+                    className={({ isActive }) =>
+                      'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
+                    }
+                  >
+                    書籍搜尋
+                  </NavLink>
+                  <NavLink
+                    to="/member/stats"
+                    className={({ isActive }) =>
+                      'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
+                    }
+                  >
+                    熱門排行榜
+                  </NavLink>
+                </>
+              )}
             </>
           ) : (
             <>
