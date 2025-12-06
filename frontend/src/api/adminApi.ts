@@ -66,8 +66,20 @@ export const adminApi = {
       this.headers(token)
     );
   },
-  getReservations(token: string, status?: string) {
-    const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+  getReservations(
+    token: string,
+    status?: string,
+    searchParams?: { member_id?: number; book_name?: string }
+  ) {
+    const queryParams = new URLSearchParams();
+    if (status) queryParams.append('status', status);
+    if (searchParams?.member_id !== undefined) {
+      queryParams.append('member_id', String(searchParams.member_id));
+    }
+    if (searchParams?.book_name) {
+      queryParams.append('book_name', searchParams.book_name);
+    }
+    const qs = queryParams.toString() ? `?${queryParams.toString()}` : '';
     return api.get('/api/admin/reservations' + qs, this.headers(token));
   },
   fulfillReservation(token: string, reservationId: number, items: { book_id: number; copies_serial: number }[]) {

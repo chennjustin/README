@@ -1,4 +1,5 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { adminApi } from '../../api/adminApi';
 import { useAdmin } from '../../context/AdminContext';
 import { BorrowPreview } from '../../types';
@@ -7,8 +8,21 @@ interface BorrowItem extends BorrowPreview {
   // Extends BorrowPreview with all required fields
 }
 
+interface ReservationData {
+  fromReservation: boolean;
+  member_id: number;
+  member_name: string;
+  books: Array<{
+    book_id: number;
+    name: string;
+    author?: string;
+    publisher?: string;
+  }>;
+}
+
 export function AdminBorrowPage() {
   const { token } = useAdmin();
+  const location = useLocation();
   const [memberId, setMemberId] = useState('');
   const [items, setItems] = useState<BorrowItem[]>([]);
   const [bookIdInput, setBookIdInput] = useState('');
@@ -18,6 +32,8 @@ export function AdminBorrowPage() {
   const [loading, setLoading] = useState(false);
   const [addingItem, setAddingItem] = useState(false);
   const [validating, setValidating] = useState(false);
+  const [reservationData, setReservationData] = useState<ReservationData | null>(null);
+  const [reservationCopiesInput, setReservationCopiesInput] = useState<Record<number, string>>({});
 
   // Parse error message and extract error code
   const parseError = (error: any): { code: string; message: string } => {
@@ -43,6 +59,17 @@ export function AdminBorrowPage() {
     };
     return errorMap[errorCode] || defaultMessage;
   };
+
+  // Handle reservation data from navigation
+  useEffect(() => {
+    const state = location.state as ReservationData | null;
+    if (state?.fromReservation) {
+      setReservationData(state);
+      setMemberId(String(state.member_id));
+      // Clear location state to prevent re-processing on re-render
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
 
   const addItem = async () => {
     // Validate all inputs are provided
@@ -190,12 +217,138 @@ export function AdminBorrowPage() {
     }
   };
 
+  // Handle adding book from reservation
+  const addReservationBook = async (bookId: number, copiesSerial: number) => {
+    if (!token || !memberId.trim()) {
+      setError('請確認 Member ID 已填入。');
+      return;
+    }
+
+    const mid = Number(memberId);
+    if (!Number.isFinite(mid)) {
+      setError('請輸入有效的 Member ID。');
+      return;
+    }
+
+    // Check if item already exists in list
+    const exists = items.some(
+      (it) => it.book_id === bookId && it.copies_serial === copiesSerial
+    );
+    if (exists) {
+      setError('此書籍複本已存在於列表中。');
+      return;
+    }
+
+    setAddingItem(true);
+    setError(null);
+
+    try {
+      // Call API to get preview information and validate
+      const preview = await adminApi.getBorrowPreview(token, mid, bookId, copiesSerial);
+      
+      // Add item to list with all details
+      setItems([...items, preview]);
+      setError(null);
+    } catch (e: any) {
+      // Handle different error types
+      const { code: errorCode, message: errorMsg } = parseError(e);
+      setError(getErrorMessage(errorCode, errorMsg));
+    } finally {
+      setAddingItem(false);
+    }
+  };
+
   // Calculate total rental fee
   const totalRentalFee = items.reduce((sum, item) => sum + item.rental_fee, 0);
 
   return (
     <div className="card">
       <div className="card-title">櫃檯借書</div>
+      
+      {/* Reservation books section */}
+      {reservationData && (
+        <div style={{ marginBottom: '2rem', padding: '1rem', backgroundColor: '#f9f9f9', borderRadius: '4px', border: '1px solid #e0e0e0' }}>
+          <h3 style={{ marginBottom: '1rem', fontSize: '1.1rem', fontWeight: '600' }}>
+            預約書籍（會員：{reservationData.member_name}，Member ID: {reservationData.member_id}）
+          </h3>
+          {reservationData.books.map((book) => (
+            <div
+              key={book.book_id}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '0.75rem',
+                marginBottom: '0.5rem',
+                backgroundColor: '#fff',
+                border: '1px solid #e0e0e0',
+                borderRadius: '4px',
+              }}
+            >
+              <div style={{ flex: 1 }}>
+                <div>
+                  <strong>Book ID:</strong> {book.book_id} | <strong>書名:</strong> {book.name}
+                  {book.author && ` | <strong>作者:</strong> ${book.author}`}
+                  {book.publisher && ` | <strong>出版社:</strong> ${book.publisher}`}
+                </div>
+                <div style={{ marginTop: '0.5rem', fontSize: '0.9rem', color: '#666' }}>
+                  請輸入 Copies Serial 後點擊「加入列表」
+                </div>
+                <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <input
+                    className="form-input"
+                    type="number"
+                    placeholder="Copies Serial"
+                    value={reservationCopiesInput[book.book_id] || ''}
+                    onChange={(e) => {
+                      setReservationCopiesInput({
+                        ...reservationCopiesInput,
+                        [book.book_id]: e.target.value,
+                      });
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const serial = Number(reservationCopiesInput[book.book_id]);
+                        if (Number.isFinite(serial)) {
+                          addReservationBook(book.book_id, serial);
+                          setReservationCopiesInput({
+                            ...reservationCopiesInput,
+                            [book.book_id]: '',
+                          });
+                        }
+                      }
+                    }}
+                    disabled={loading || validating || addingItem}
+                    style={{ width: '150px' }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      const serial = Number(reservationCopiesInput[book.book_id]);
+                      if (Number.isFinite(serial)) {
+                        addReservationBook(book.book_id, serial);
+                        setReservationCopiesInput({
+                          ...reservationCopiesInput,
+                          [book.book_id]: '',
+                        });
+                      } else {
+                        setError('請輸入有效的 Copies Serial。');
+                      }
+                    }}
+                    disabled={loading || validating || addingItem}
+                    style={{ padding: '4px 12px', fontSize: '12px' }}
+                  >
+                    {addingItem ? '加入中...' : '加入列表'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <form onSubmit={onSubmit}>
         <div className="form-row">
           <div className="form-field">

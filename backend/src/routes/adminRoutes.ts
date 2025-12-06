@@ -1268,13 +1268,40 @@ adminRouter.get(
   async (req: AuthedRequest, res: Response<ApiResponse<any>>, next: NextFunction) => {
     try {
       const status = (req.query.status as string) || undefined;
+      const memberIdParam = req.query.member_id as string | undefined;
+      const bookNameParam = req.query.book_name as string | undefined;
+      
       const params: any[] = [];
-      let where = 'WHERE 1=1';
+      const conditions: string[] = [];
+      
+      // Status filter
       if (status) {
         params.push(status);
-        where += ` AND r.status = $${params.length}`;
+        conditions.push(`r.status = $${params.length}`);
       }
-
+      
+      // Member ID filter
+      if (memberIdParam) {
+        const memberId = Number(memberIdParam);
+        if (Number.isFinite(memberId)) {
+          params.push(memberId);
+          conditions.push(`r.member_id = $${params.length}`);
+        }
+      }
+      
+      // Book name filter - use subquery to filter reservations containing books matching the name
+      if (bookNameParam) {
+        params.push(`%${bookNameParam}%`);
+        conditions.push(`r.reservation_id IN (
+          SELECT DISTINCT rr2.reservation_id
+          FROM RESERVATION_RECORD rr2
+          JOIN BOOK b2 ON rr2.book_id = b2.book_id
+          WHERE b2.name ILIKE $${params.length}
+        )`);
+      }
+      
+      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+      
       const sql = `
         SELECT 
           r.*,
@@ -1289,7 +1316,7 @@ adminRouter.get(
         JOIN MEMBER m ON r.member_id = m.member_id
         JOIN RESERVATION_RECORD rr ON r.reservation_id = rr.reservation_id
         JOIN BOOK b ON rr.book_id = b.book_id
-        ${where}
+        ${whereClause}
         GROUP BY r.reservation_id, m.name
         ORDER BY r.reserve_date DESC, r.reservation_id DESC
       `;
