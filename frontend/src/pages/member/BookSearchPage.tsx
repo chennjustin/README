@@ -78,44 +78,42 @@ export function BookSearchPage() {
         {loading && <div className="text-muted">載入中...</div>}
         {!loading && books.length === 0 && <div className="text-muted">目前沒有資料。</div>}
         {books.length > 0 && (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>書名</th>
-                <th>作者</th>
-                <th>出版社</th>
-                <th>分類</th>
-                <th>可借本數</th>
-                <th>預估最低租金</th>
-              </tr>
-            </thead>
-            <tbody>
-              {books.map((b) => (
-                <tr key={b.book_id}>
-                  <td>{b.book_id}</td>
-                  <td>
-                    <Link to={`/member/books/${b.book_id}`}>{b.name}</Link>
-                  </td>
-                  <td>{b.author}</td>
-                  <td>{b.publisher}</td>
-                  <td>
-                    {b.categories?.map((c) => (
-                      <span key={c.category_id} className="tag">
-                        {c.name}
-                      </span>
-                    ))}
-                  </td>
-                  <td>{b.available_count}</td>
-                  <td>
-                    {b.estimated_min_rental_price != null
-                      ? Math.round(b.estimated_min_rental_price)
-                      : '-'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="book-grid">
+            {books.map((b) => {
+              const isAvailable = b.available_count > 0;
+              const rentalPrice = b.estimated_min_rental_price != null
+                ? Math.round(b.estimated_min_rental_price)
+                : null;
+              
+              return (
+                <Link
+                  key={b.book_id}
+                  to={`/member/books/${b.book_id}`}
+                  className={`book-card ${!isAvailable ? 'book-card-unavailable' : ''}`}
+                >
+                  <div className="book-card-title">{b.name}</div>
+                  <div className="book-card-author">{b.author}</div>
+                  {b.categories && b.categories.length > 0 && (
+                    <div className="book-card-categories">
+                      {b.categories.map((c) => (
+                        <span key={c.category_id} className="book-card-tag">
+                          {c.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="book-card-footer">
+                    <span className={`book-card-status ${isAvailable ? 'book-card-status-available' : ''}`}>
+                      {isAvailable ? '可借' : '不可借'}
+                    </span>
+                    <span className="book-card-price">
+                      {rentalPrice ? `TWD ${rentalPrice}` : '-'}
+                    </span>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
         )}
       </div>
     </>
