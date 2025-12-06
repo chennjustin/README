@@ -45,7 +45,9 @@ README/
 
 ## 快速開始
 
-### 1. Supabase 設定
+### 📊 資料庫設定
+
+#### 1. Supabase 設定
 
 1. 建立 Supabase 帳號和專案
 2. 執行 schema 遷移：
@@ -62,7 +64,7 @@ README/
    -- database/relational/seed.sql
    ```
 
-### 2. MongoDB 設定
+#### 2. MongoDB 設定
 
 1. 建立 MongoDB Atlas 帳號和叢集
 2. 初始化資料庫：
