@@ -61,7 +61,27 @@ CREATE TABLE MEMBER (
 );
 
 -- ============================================
--- 4. BOOK - 書籍基本資訊表
+-- 4. TOP_UP - 儲值記錄表
+-- ============================================
+CREATE TABLE TOP_UP (
+    top_up_id BIGSERIAL PRIMARY KEY,
+    member_id BIGINT NOT NULL,
+    admin_id BIGINT NOT NULL,
+    amount INTEGER NOT NULL,
+    top_up_date DATE NOT NULL,
+    CONSTRAINT chk_top_up_amount CHECK (amount >= 0),
+    CONSTRAINT fk_top_up_member FOREIGN KEY (member_id) 
+        REFERENCES MEMBER(member_id) 
+        ON DELETE RESTRICT 
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_top_up_admin FOREIGN KEY (admin_id) 
+        REFERENCES ADMIN(admin_id) 
+        ON DELETE RESTRICT 
+        ON UPDATE CASCADE
+);
+
+-- ============================================
+-- 5. BOOK - 書籍基本資訊表
 -- ============================================
 CREATE TABLE BOOK (
     book_id BIGSERIAL PRIMARY KEY,
@@ -73,7 +93,7 @@ CREATE TABLE BOOK (
 );
 
 -- ============================================
--- 5. CATEGORY - 書籍分類表
+-- 6. CATEGORY - 書籍分類表
 -- ============================================
 CREATE TABLE CATEGORY (
     category_id BIGSERIAL PRIMARY KEY,
@@ -81,7 +101,7 @@ CREATE TABLE CATEGORY (
 );
 
 -- ============================================
--- 6. BOOK_CATEGORY - 書籍與分類的 M:N 關係表
+-- 7. BOOK_CATEGORY - 書籍與分類的 M:N 關係表
 -- ============================================
 CREATE TABLE BOOK_CATEGORY (
     book_id BIGINT NOT NULL,
@@ -98,7 +118,7 @@ CREATE TABLE BOOK_CATEGORY (
 );
 
 -- ============================================
--- 7. CONDITION_DISCOUNT - 書況折扣表
+-- 8. CONDITION_DISCOUNT - 書況折扣表
 -- ============================================
 CREATE TABLE CONDITION_DISCOUNT (
     book_condition VARCHAR(20) PRIMARY KEY,
@@ -108,7 +128,7 @@ CREATE TABLE CONDITION_DISCOUNT (
 );
 
 -- ============================================
--- 8. BOOK_COPIES - 書籍複本表（弱實體）
+-- 9. BOOK_COPIES - 書籍複本表（弱實體）
 -- ============================================
 CREATE TABLE BOOK_COPIES (
     book_id BIGINT NOT NULL,
@@ -133,7 +153,7 @@ CREATE TABLE BOOK_COPIES (
 );
 
 -- ============================================
--- 9. BOOK_LOAN - 借閱交易表
+-- 10. BOOK_LOAN - 借閱交易表
 -- ============================================
 CREATE TABLE BOOK_LOAN (
     loan_id BIGSERIAL PRIMARY KEY,
@@ -152,7 +172,7 @@ CREATE TABLE BOOK_LOAN (
 );
 
 -- ============================================
--- 10. LOAN_RECORD - 借閱記錄詳情表（弱實體）
+-- 11. LOAN_RECORD - 借閱記錄詳情表（弱實體）
 -- ============================================
 CREATE TABLE LOAN_RECORD (
     loan_id BIGINT NOT NULL,
@@ -179,7 +199,7 @@ CREATE TABLE LOAN_RECORD (
 );
 
 -- ============================================
--- 11. RESERVATION - 預約記錄表
+-- 12. RESERVATION - 預約記錄表
 -- ============================================
 CREATE TABLE RESERVATION (
     reservation_id BIGSERIAL PRIMARY KEY,
@@ -196,7 +216,7 @@ CREATE TABLE RESERVATION (
 );
 
 -- ============================================
--- 12. RESERVATION_RECORD - 預約與書籍的 M:N 關係表
+-- 13. RESERVATION_RECORD - 預約與書籍的 M:N 關係表
 -- ============================================
 CREATE TABLE RESERVATION_RECORD (
     reservation_id BIGINT NOT NULL,
@@ -213,7 +233,7 @@ CREATE TABLE RESERVATION_RECORD (
 );
 
 -- ============================================
--- 13. FEE_TYPE - 費用類型表
+-- 14. FEE_TYPE - 費用類型表
 -- ============================================
 CREATE TABLE FEE_TYPE (
     type VARCHAR(30) PRIMARY KEY,
@@ -225,7 +245,7 @@ CREATE TABLE FEE_TYPE (
 );
 
 -- ============================================
--- 14. ADD_FEE - 額外費用表（弱實體）
+-- 15. ADD_FEE - 額外費用表（弱實體）
 -- ============================================
 CREATE TABLE ADD_FEE (
     loan_id BIGINT NOT NULL,
@@ -256,6 +276,11 @@ CREATE INDEX idx_member_admin_id ON MEMBER(admin_id);
 CREATE INDEX idx_member_email ON MEMBER(email);
 CREATE INDEX idx_member_phone ON MEMBER(phone);
 CREATE INDEX idx_member_status ON MEMBER(status);
+
+-- TOP_UP 表索引
+CREATE INDEX idx_top_up_member_id ON TOP_UP(member_id);
+CREATE INDEX idx_top_up_admin_id ON TOP_UP(admin_id);
+CREATE INDEX idx_top_up_date ON TOP_UP(top_up_date);
 
 -- BOOK_COPIES 表索引
 CREATE INDEX idx_copies_status ON BOOK_COPIES(status);
@@ -293,6 +318,7 @@ CREATE INDEX idx_add_fee_date ON ADD_FEE(date);
 COMMENT ON TABLE MEMBERSHIP_LEVEL IS '會員等級表：定義金、銀、銅三個等級及其權益';
 COMMENT ON TABLE ADMIN IS '管理員/店員表：記錄系統管理員資訊';
 COMMENT ON TABLE MEMBER IS '會員表：記錄所有註冊會員的基本資訊和帳戶狀態';
+COMMENT ON TABLE TOP_UP IS '儲值記錄表：記錄會員的每次儲值記錄，會員等級依據單次儲值金額判定';
 COMMENT ON TABLE BOOK IS '書籍基本資訊表：記錄書籍的基本屬性';
 COMMENT ON TABLE CATEGORY IS '書籍分類表：定義書籍的分類';
 COMMENT ON TABLE BOOK_CATEGORY IS '書籍與分類關係表：多對多關係';

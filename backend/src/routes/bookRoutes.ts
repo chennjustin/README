@@ -38,6 +38,8 @@ bookRouter.get(
       // 若有 memberId，取會員折扣
       let discountJoin = '';
       let discountSelect = 'NULL::DECIMAL AS discount_rate';
+      let discountGroupBy = '';
+      let estimatedPriceExpr = 'NULL AS estimated_min_rental_price';
       if (memberId) {
         const idx = params.push(Number(memberId));
         discountJoin = `
@@ -45,6 +47,8 @@ bookRouter.get(
           LEFT JOIN MEMBERSHIP_LEVEL ml ON m.level_id = ml.level_id
         `;
         discountSelect = 'COALESCE(ml.discount_rate, 1.0) AS discount_rate';
+        discountGroupBy = ', ml.discount_rate';
+        estimatedPriceExpr = `COALESCE(available_stats.min_rental_price, 0) * COALESCE(ml.discount_rate, 1.0) AS estimated_min_rental_price`;
       }
 
       const sql = `
@@ -60,10 +64,7 @@ bookRouter.get(
           )) AS categories,
           COALESCE(available_stats.available_count, 0) AS available_count,
           ${discountSelect},
-          CASE 
-            WHEN COALESCE(ml.discount_rate, 1.0) IS NULL THEN NULL
-            ELSE COALESCE(available_stats.min_rental_price, 0) * COALESCE(ml.discount_rate, 1.0)
-          END AS estimated_min_rental_price
+          ${estimatedPriceExpr}
         FROM BOOK b
         LEFT JOIN BOOK_CATEGORY bc ON b.book_id = bc.book_id
         LEFT JOIN CATEGORY c ON bc.category_id = c.category_id
@@ -84,8 +85,8 @@ bookRouter.get(
           b.publisher,
           b.price,
           available_stats.available_count,
-          available_stats.min_rental_price,
-          ml.discount_rate
+          available_stats.min_rental_price
+          ${discountGroupBy}
         ORDER BY b.book_id
       `;
 

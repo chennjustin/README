@@ -1,7 +1,9 @@
 import dotenv from 'dotenv';
 import { Pool, PoolClient, QueryConfig, QueryResult, QueryResultRow } from 'pg';
+import path from 'path';
 
-dotenv.config();
+// 從專案根目錄讀取 .env 檔案（README 目錄）
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const connectionString = process.env.DATABASE_URL || process.env.DATABASE_POOL_URL;
 

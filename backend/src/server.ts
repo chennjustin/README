@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
 import { errorHandler } from './middleware/errorHandler';
 import { memberRouter } from './routes/memberRoutes';
 import { bookRouter } from './routes/bookRoutes';
@@ -8,7 +9,8 @@ import { adminRouter } from './routes/adminRoutes';
 import { statsRouter } from './routes/statsRoutes';
 import { reservationRouter } from './routes/reservationRoutes';
 
-dotenv.config();
+// 從專案根目錄讀取 .env 檔案（README 目錄）
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const app = express();
 
