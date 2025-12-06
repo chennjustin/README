@@ -4,7 +4,67 @@ import { ApiResponse } from '../types';
 
 export const bookRouter = Router();
 
-// M2: 搜尋 / 列出書籍
+/**
+ * @swagger
+ * /api/books:
+ *   get:
+ *     summary: Search and list books
+ *     description: Search books by keyword, author, publisher, or category. Optionally include member discount information.
+ *     tags: [Books]
+ *     parameters:
+ *       - in: query
+ *         name: keyword
+ *         schema:
+ *           type: string
+ *         description: Search keyword for book name
+ *       - in: query
+ *         name: author
+ *         schema:
+ *           type: string
+ *         description: Filter by author name
+ *       - in: query
+ *         name: publisher
+ *         schema:
+ *           type: string
+ *         description: Filter by publisher name
+ *       - in: query
+ *         name: categoryId
+ *         schema:
+ *           type: integer
+ *         description: Filter by category ID
+ *       - in: query
+ *         name: memberId
+ *         schema:
+ *           type: integer
+ *         description: Member ID to calculate discount rate and estimated rental price
+ *     responses:
+ *       200:
+ *         description: List of books matching the search criteria
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiSuccess'
+ *             example:
+ *               success: true
+ *               data:
+ *                 - book_id: 1
+ *                   name: "The Great Gatsby"
+ *                   author: "F. Scott Fitzgerald"
+ *                   publisher: "Scribner"
+ *                   price: 15.99
+ *                   categories:
+ *                     - category_id: 1
+ *                       name: "Fiction"
+ *                   available_count: 5
+ *                   discount_rate: 0.9
+ *                   estimated_min_rental_price: 14.39
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ */
 bookRouter.get(
   '/',
   async (req: Request, res: Response<ApiResponse<any>>, next: NextFunction) => {
@@ -97,7 +157,83 @@ bookRouter.get(
   }
 );
 
-// M3: 查看單一本書詳細資訊
+/**
+ * @swagger
+ * /api/books/{bookId}:
+ *   get:
+ *     summary: Get book details by ID
+ *     description: Retrieve detailed information about a specific book, including available copies by condition and rental prices. Optionally include member discount information.
+ *     tags: [Books]
+ *     parameters:
+ *       - in: path
+ *         name: bookId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Book ID
+ *       - in: query
+ *         name: memberId
+ *         schema:
+ *           type: integer
+ *         description: Member ID to calculate discount rate and discounted rental prices
+ *     responses:
+ *       200:
+ *         description: Book details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiSuccess'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/BookDetail'
+ *             example:
+ *               success: true
+ *               data:
+ *                 book_id: 1
+ *                 name: "The Great Gatsby"
+ *                 author: "F. Scott Fitzgerald"
+ *                 publisher: "Scribner"
+ *                 price: 15.99
+ *                 categories:
+ *                   - category_id: 1
+ *                     name: "Fiction"
+ *                 copies:
+ *                   - book_condition: "Good"
+ *                     rental_price: 16.0
+ *                     available_count: 3
+ *                     discount_rate: 0.9
+ *                     discounted_rental_price: 14.4
+ *       400:
+ *         description: Invalid book ID format
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *             example:
+ *               success: false
+ *               error:
+ *                 code: "INVALID_BOOK_ID"
+ *                 message: "bookId format error"
+ *       404:
+ *         description: Book not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *             example:
+ *               success: false
+ *               error:
+ *                 code: "BOOK_NOT_FOUND"
+ *                 message: "Book not found"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ */
 bookRouter.get(
   '/:bookId',
   async (req: Request, res: Response<ApiResponse<any>>, next: NextFunction) => {

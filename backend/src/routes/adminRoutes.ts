@@ -33,7 +33,71 @@ function requireAdmin(req: AuthedRequest, res: Response<ApiResponse<any>>, next:
   }
 }
 
-// A1: Admin 登入
+/**
+ * @swagger
+ * /api/admin/login:
+ *   post:
+ *     summary: Admin login
+ *     description: Authenticate admin user and receive JWT token
+ *     tags: [Admin]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - phone
+ *               - password
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: "Admin User"
+ *               phone:
+ *                 type: string
+ *                 example: "0912345678"
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 example: "password123"
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiSuccess'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         token:
+ *                           type: string
+ *                           description: JWT token for authentication
+ *                         admin:
+ *                           $ref: '#/components/schemas/Admin'
+ *       400:
+ *         description: Invalid input
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       401:
+ *         description: Invalid credentials
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       403:
+ *         description: Admin account inactive
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ */
 adminRouter.post(
   '/login',
   async (req: Request, res: Response<ApiResponse<any>>, next: NextFunction) => {
@@ -99,7 +163,65 @@ adminRouter.post(
   }
 );
 
-// A2: 新增會員
+/**
+ * @swagger
+ * /api/admin/members:
+ *   post:
+ *     summary: Create a new member
+ *     description: Create a new member account. Membership level is automatically determined based on initial balance.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - phone
+ *               - email
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: "John Doe"
+ *               phone:
+ *                 type: string
+ *                 example: "0912345678"
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: "john@example.com"
+ *               initialBalance:
+ *                 type: number
+ *                 default: 0
+ *                 example: 1000
+ *     responses:
+ *       201:
+ *         description: Member created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiSuccess'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/Member'
+ *       400:
+ *         description: Invalid input or business rule violation
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       401:
+ *         description: Unauthorized - Invalid or missing token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ */
 adminRouter.post(
   '/members',
   requireAdmin,
@@ -159,7 +281,71 @@ adminRouter.post(
   }
 );
 
-// A2: 調整會員餘額
+/**
+ * @swagger
+ * /api/admin/members/{memberId}/balance:
+ *   patch:
+ *     summary: Adjust member balance
+ *     description: Add or subtract amount from member balance. Use positive amount to add, negative to subtract.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: memberId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Member ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - amount
+ *             properties:
+ *               amount:
+ *                 type: number
+ *                 description: Amount to adjust (positive to add, negative to subtract)
+ *                 example: 500
+ *     responses:
+ *       200:
+ *         description: Balance adjusted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiSuccess'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         member_id:
+ *                           type: integer
+ *                         balance:
+ *                           type: number
+ *       400:
+ *         description: Invalid input
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       404:
+ *         description: Member not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ */
 adminRouter.patch(
   '/members/:memberId/balance',
   requireAdmin,
@@ -196,7 +382,71 @@ adminRouter.patch(
   }
 );
 
-// A2: 修改會員狀態
+/**
+ * @swagger
+ * /api/admin/members/{memberId}/status:
+ *   patch:
+ *     summary: Update member status
+ *     description: Change member account status (Active, Inactive, or Suspended)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: memberId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Member ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - status
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [Active, Inactive, Suspended]
+ *                 example: "Active"
+ *     responses:
+ *       200:
+ *         description: Status updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiSuccess'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         member_id:
+ *                           type: integer
+ *                         status:
+ *                           type: string
+ *       400:
+ *         description: Invalid input
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       404:
+ *         description: Member not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ */
 adminRouter.patch(
   '/members/:memberId/status',
   requireAdmin,
@@ -233,7 +483,66 @@ adminRouter.patch(
   }
 );
 
-// A3: 書籍基本資訊管理
+/**
+ * @swagger
+ * /api/admin/books:
+ *   post:
+ *     summary: Create a new book
+ *     description: Add a new book to the system
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - author
+ *               - price
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: "The Great Gatsby"
+ *               author:
+ *                 type: string
+ *                 example: "F. Scott Fitzgerald"
+ *               publisher:
+ *                 type: string
+ *                 example: "Scribner"
+ *               price:
+ *                 type: number
+ *                 example: 15.99
+ *               sequence_name:
+ *                 type: string
+ *                 example: "ISBN-123456"
+ *     responses:
+ *       201:
+ *         description: Book created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiSuccess'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/Book'
+ *       400:
+ *         description: Invalid input
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ */
 adminRouter.post(
   '/books',
   requireAdmin,
@@ -260,6 +569,70 @@ adminRouter.post(
   }
 );
 
+/**
+ * @swagger
+ * /api/admin/books/{bookId}:
+ *   patch:
+ *     summary: Update book information
+ *     description: Update book details. Only provided fields will be updated.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: bookId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Book ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               sequence_name:
+ *                 type: string
+ *               name:
+ *                 type: string
+ *               author:
+ *                 type: string
+ *               publisher:
+ *                 type: string
+ *               price:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: Book updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiSuccess'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/Book'
+ *       400:
+ *         description: Invalid input
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       404:
+ *         description: Book not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ */
 adminRouter.patch(
   '/books/:bookId',
   requireAdmin,
@@ -329,6 +702,56 @@ adminRouter.patch(
   }
 );
 
+/**
+ * @swagger
+ * /api/admin/books/{bookId}:
+ *   delete:
+ *     summary: Delete a book
+ *     description: Remove a book from the system
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: bookId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Book ID
+ *     responses:
+ *       200:
+ *         description: Book deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiSuccess'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         book_id:
+ *                           type: integer
+ *       400:
+ *         description: Invalid book ID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       404:
+ *         description: Book not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ */
 adminRouter.delete(
   '/books/:bookId',
   requireAdmin,
@@ -362,7 +785,47 @@ adminRouter.delete(
   }
 );
 
-// 分類管理
+/**
+ * @swagger
+ * /api/admin/categories:
+ *   post:
+ *     summary: Create a new category
+ *     description: Add a new book category to the system
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: "Fiction"
+ *     responses:
+ *       201:
+ *         description: Category created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiSuccess'
+ *       400:
+ *         description: Invalid input
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ */
 adminRouter.post(
   '/categories',
   requireAdmin,
@@ -424,7 +887,56 @@ adminRouter.patch(
   }
 );
 
-// 書籍分類調整
+/**
+ * @swagger
+ * /api/admin/books/{bookId}/categories:
+ *   post:
+ *     summary: Update book categories
+ *     description: Replace all categories for a book with the provided category IDs
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: bookId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Book ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - categoryIds
+ *             properties:
+ *               categoryIds:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *                 example: [1, 2, 3]
+ *     responses:
+ *       200:
+ *         description: Categories updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiSuccess'
+ *       400:
+ *         description: Invalid input
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ */
 adminRouter.post(
   '/books/:bookId/categories',
   requireAdmin,
@@ -471,7 +983,69 @@ adminRouter.post(
   }
 );
 
-// A4: 複本管理
+/**
+ * @swagger
+ * /api/admin/books/{bookId}/copies:
+ *   post:
+ *     summary: Add a book copy
+ *     description: Add a new physical copy of a book to the system. Rental price is automatically calculated based on book price and condition discount.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: bookId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Book ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - purchase_price
+ *             properties:
+ *               purchase_date:
+ *                 type: string
+ *                 format: date
+ *                 example: "2024-01-15"
+ *               purchase_price:
+ *                 type: number
+ *                 example: 15.99
+ *               book_condition:
+ *                 type: string
+ *                 enum: [Good, Fair, Poor]
+ *                 default: Good
+ *                 example: "Good"
+ *     responses:
+ *       201:
+ *         description: Book copy added successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiSuccess'
+ *       400:
+ *         description: Invalid input or business rule violation
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       404:
+ *         description: Book not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ */
 adminRouter.post(
   '/books/:bookId/copies',
   requireAdmin,
@@ -614,7 +1188,80 @@ adminRouter.patch(
   }
 );
 
-// A5: 櫃檯辦理借書
+/**
+ * @swagger
+ * /api/admin/loans:
+ *   post:
+ *     summary: Process book loan at counter
+ *     description: Create a new loan transaction for a member. Validates member status, book availability, and balance.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - member_id
+ *               - items
+ *             properties:
+ *               member_id:
+ *                 type: integer
+ *                 example: 1
+ *               items:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - book_id
+ *                     - copies_serial
+ *                   properties:
+ *                     book_id:
+ *                       type: integer
+ *                       example: 1
+ *                     copies_serial:
+ *                       type: integer
+ *                       example: 1
+ *     responses:
+ *       201:
+ *         description: Loan created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiSuccess'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         loan_id:
+ *                           type: integer
+ *                         final_price:
+ *                           type: number
+ *                         member:
+ *                           type: object
+ *       400:
+ *         description: Invalid input or business rule violation
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       404:
+ *         description: Member or copy not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ */
 adminRouter.post(
   '/loans',
   requireAdmin,
@@ -802,7 +1449,94 @@ adminRouter.post(
   }
 );
 
-// A6: 櫃檯辦理還書
+/**
+ * @swagger
+ * /api/admin/loans/{loanId}/items/{bookId}/{copiesSerial}/return:
+ *   post:
+ *     summary: Process book return at counter
+ *     description: Return a loaned book. Calculates overdue fees, damage fees, and lost book fees if applicable.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: loanId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Loan ID
+ *       - in: path
+ *         name: bookId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Book ID
+ *       - in: path
+ *         name: copiesSerial
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Copy serial number
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               final_condition:
+ *                 type: string
+ *                 enum: [Good, Fair, Poor]
+ *                 description: Final condition of the book
+ *               lost:
+ *                 type: boolean
+ *                 default: false
+ *                 description: Whether the book is lost
+ *               immediateCharge:
+ *                 type: boolean
+ *                 default: false
+ *                 description: Whether to immediately charge additional fees
+ *     responses:
+ *       200:
+ *         description: Book returned successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiSuccess'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         loan_id:
+ *                           type: integer
+ *                         book_id:
+ *                           type: integer
+ *                         copies_serial:
+ *                           type: integer
+ *                         total_add_fee:
+ *                           type: number
+ *                         member:
+ *                           type: object
+ *       400:
+ *         description: Invalid input or business rule violation
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       404:
+ *         description: Loan item not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ */
 adminRouter.post(
   '/loans/:loanId/items/:bookId/:copiesSerial/return',
   requireAdmin,
@@ -1021,7 +1755,60 @@ adminRouter.post(
   }
 );
 
-// A7: Admin 續借（沿用邏輯，主要是權限不同）
+/**
+ * @swagger
+ * /api/admin/loans/{loanId}/items/{bookId}/{copiesSerial}/renew:
+ *   post:
+ *     summary: Admin renew a loan item
+ *     description: Admin can renew a loan item on behalf of a member. Same business rules apply as member renewal.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: loanId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Loan ID
+ *       - in: path
+ *         name: bookId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Book ID
+ *       - in: path
+ *         name: copiesSerial
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Copy serial number
+ *     responses:
+ *       200:
+ *         description: Loan item renewed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiSuccess'
+ *       400:
+ *         description: Invalid input or renewal not allowed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       404:
+ *         description: Loan item not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ */
 adminRouter.post(
   '/loans/:loanId/items/:bookId/:copiesSerial/renew',
   requireAdmin,
@@ -1152,7 +1939,43 @@ adminRouter.post(
   }
 );
 
-// A8: Admin 管理預約
+/**
+ * @swagger
+ * /api/admin/reservations:
+ *   get:
+ *     summary: Get all reservations
+ *     description: Retrieve all reservations, optionally filtered by status
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [Active, Fulfilled, Cancelled]
+ *         description: Filter by reservation status
+ *     responses:
+ *       200:
+ *         description: List of reservations
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiSuccess'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/Reservation'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ */
 adminRouter.get(
   '/reservations',
   requireAdmin,
@@ -1193,6 +2016,66 @@ adminRouter.get(
   }
 );
 
+/**
+ * @swagger
+ * /api/admin/reservations/{reservationId}/fulfill:
+ *   post:
+ *     summary: Fulfill a reservation
+ *     description: Mark a reservation as fulfilled. Note: Actual loan creation should be done via /api/admin/loans endpoint.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: reservationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Reservation ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - items
+ *             properties:
+ *               items:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     book_id:
+ *                       type: integer
+ *                     copies_serial:
+ *                       type: integer
+ *     responses:
+ *       200:
+ *         description: Reservation fulfilled successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiSuccess'
+ *       400:
+ *         description: Invalid input or business rule violation
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       404:
+ *         description: Reservation not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ */
 adminRouter.post(
   '/reservations/:reservationId/fulfill',
   requireAdmin,
@@ -1267,7 +2150,43 @@ adminRouter.post(
   }
 );
 
-// A9: 管理 FEE_TYPE
+/**
+ * @swagger
+ * /api/admin/fee-types:
+ *   get:
+ *     summary: Get all fee types
+ *     description: Retrieve all fee type configurations including base amounts and rates
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of fee types
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiSuccess'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           type:
+ *                             type: string
+ *                           base_amount:
+ *                             type: number
+ *                           rate:
+ *                             type: number
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ */
 adminRouter.get(
   '/fee-types',
   requireAdmin,

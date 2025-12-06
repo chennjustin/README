@@ -4,7 +4,43 @@ import { ApiResponse } from '../types';
 
 export const statsRouter = Router();
 
-// M8 / A10: 熱門書籍
+/**
+ * @swagger
+ * /api/stats/top-books:
+ *   get:
+ *     summary: Get top borrowed books
+ *     description: Retrieve the most frequently borrowed books, ordered by borrow count
+ *     tags: [Statistics]
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Maximum number of results to return
+ *     responses:
+ *       200:
+ *         description: List of top borrowed books
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiSuccess'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/TopBook'
+ *             example:
+ *               success: true
+ *               data:
+ *                 - book_id: 1
+ *                   name: "The Great Gatsby"
+ *                   author: "F. Scott Fitzgerald"
+ *                   publisher: "Scribner"
+ *                   borrow_count: 50
+ */
 statsRouter.get(
   '/top-books',
   async (req: Request, res: Response<ApiResponse<any>>, next: NextFunction) => {
@@ -33,7 +69,41 @@ statsRouter.get(
   }
 );
 
-// M8 / A10: 熱門類別
+/**
+ * @swagger
+ * /api/stats/top-categories:
+ *   get:
+ *     summary: Get top borrowed categories
+ *     description: Retrieve the most frequently borrowed book categories, ordered by borrow count
+ *     tags: [Statistics]
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Maximum number of results to return
+ *     responses:
+ *       200:
+ *         description: List of top borrowed categories
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiSuccess'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/TopCategory'
+ *             example:
+ *               success: true
+ *               data:
+ *                 - category_id: 1
+ *                   name: "Fiction"
+ *                   borrow_count: 100
+ */
 statsRouter.get(
   '/top-categories',
   async (req: Request, res: Response<ApiResponse<any>>, next: NextFunction) => {

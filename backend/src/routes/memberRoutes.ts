@@ -13,7 +13,49 @@ function getMemberId(req: Request): number | null {
   return Number.isFinite(id) ? id : null;
 }
 
-// M1: 取得會員個人資料
+/**
+ * @swagger
+ * /api/member/profile:
+ *   get:
+ *     summary: Get member profile
+ *     description: Retrieve member profile information including membership level details and active loan count
+ *     tags: [Members]
+ *     parameters:
+ *       - in: header
+ *         name: x-member-id
+ *         schema:
+ *           type: integer
+ *         description: Member ID (alternative to query parameter)
+ *       - in: query
+ *         name: memberId
+ *         schema:
+ *           type: integer
+ *         description: Member ID
+ *     responses:
+ *       200:
+ *         description: Member profile retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiSuccess'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/Member'
+ *       400:
+ *         description: Invalid or missing member ID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       404:
+ *         description: Member not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ */
 memberRouter.get(
   '/profile',
   async (req: Request, res: Response<ApiResponse<any>>, next: NextFunction) => {
@@ -59,7 +101,45 @@ memberRouter.get(
   }
 );
 
-// M5: 查詢會員預約
+/**
+ * @swagger
+ * /api/member/reservations:
+ *   get:
+ *     summary: Get member reservations
+ *     description: Retrieve all reservations for the member, including book details
+ *     tags: [Members]
+ *     parameters:
+ *       - in: header
+ *         name: x-member-id
+ *         schema:
+ *           type: integer
+ *         description: Member ID (alternative to query parameter)
+ *       - in: query
+ *         name: memberId
+ *         schema:
+ *           type: integer
+ *         description: Member ID
+ *     responses:
+ *       200:
+ *         description: List of member reservations
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiSuccess'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/Reservation'
+ *       400:
+ *         description: Invalid or missing member ID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ */
 memberRouter.get(
   '/reservations',
   async (req: Request, res: Response<ApiResponse<any>>, next: NextFunction) => {
@@ -99,7 +179,49 @@ memberRouter.get(
   }
 );
 
-// M5: 取消預約
+/**
+ * @swagger
+ * /api/member/reservations/{reservationId}:
+ *   delete:
+ *     summary: Cancel a reservation
+ *     description: Cancel an active reservation. Only the member who created the reservation can cancel it.
+ *     tags: [Members]
+ *     parameters:
+ *       - in: path
+ *         name: reservationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Reservation ID
+ *       - in: header
+ *         name: x-member-id
+ *         schema:
+ *           type: integer
+ *         description: Member ID (alternative to query parameter)
+ *       - in: query
+ *         name: memberId
+ *         schema:
+ *           type: integer
+ *         description: Member ID
+ *     responses:
+ *       200:
+ *         description: Reservation cancelled successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiSuccess'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/Reservation'
+ *       400:
+ *         description: Invalid input or reservation cannot be cancelled
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ */
 memberRouter.delete(
   '/reservations/:reservationId',
   async (req: Request, res: Response<ApiResponse<any>>, next: NextFunction) => {
@@ -141,7 +263,45 @@ memberRouter.delete(
   }
 );
 
-// M6: 目前借閱中的書
+/**
+ * @swagger
+ * /api/member/loans/active:
+ *   get:
+ *     summary: Get active loans
+ *     description: Retrieve all currently active (not returned) loans for the member
+ *     tags: [Members]
+ *     parameters:
+ *       - in: header
+ *         name: x-member-id
+ *         schema:
+ *           type: integer
+ *         description: Member ID (alternative to query parameter)
+ *       - in: query
+ *         name: memberId
+ *         schema:
+ *           type: integer
+ *         description: Member ID
+ *     responses:
+ *       200:
+ *         description: List of active loans
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiSuccess'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/Loan'
+ *       400:
+ *         description: Invalid or missing member ID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ */
 memberRouter.get(
   '/loans/active',
   async (req: Request, res: Response<ApiResponse<any>>, next: NextFunction) => {
@@ -192,7 +352,45 @@ memberRouter.get(
   }
 );
 
-// M6: 歷史借閱紀錄
+/**
+ * @swagger
+ * /api/member/loans/history:
+ *   get:
+ *     summary: Get loan history
+ *     description: Retrieve all returned (completed) loans for the member
+ *     tags: [Members]
+ *     parameters:
+ *       - in: header
+ *         name: x-member-id
+ *         schema:
+ *           type: integer
+ *         description: Member ID (alternative to query parameter)
+ *       - in: query
+ *         name: memberId
+ *         schema:
+ *           type: integer
+ *         description: Member ID
+ *     responses:
+ *       200:
+ *         description: List of historical loans
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiSuccess'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/Loan'
+ *       400:
+ *         description: Invalid or missing member ID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ */
 memberRouter.get(
   '/loans/history',
   async (req: Request, res: Response<ApiResponse<any>>, next: NextFunction) => {
@@ -244,7 +442,74 @@ memberRouter.get(
   }
 );
 
-// M7: 會員線上申請續借
+/**
+ * @swagger
+ * /api/member/loans/{loanId}/items/{bookId}/{copiesSerial}/renew:
+ *   post:
+ *     summary: Renew a loan item
+ *     description: Request renewal for a specific loan item. Member must have sufficient balance and the item must not have exceeded renewal limit.
+ *     tags: [Members]
+ *     parameters:
+ *       - in: path
+ *         name: loanId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Loan ID
+ *       - in: path
+ *         name: bookId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Book ID
+ *       - in: path
+ *         name: copiesSerial
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Copy serial number
+ *       - in: header
+ *         name: x-member-id
+ *         schema:
+ *           type: integer
+ *         description: Member ID (alternative to query parameter)
+ *       - in: query
+ *         name: memberId
+ *         schema:
+ *           type: integer
+ *         description: Member ID
+ *     responses:
+ *       200:
+ *         description: Loan item renewed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiSuccess'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         loan:
+ *                           type: object
+ *                         fee:
+ *                           type: object
+ *                         member:
+ *                           type: object
+ *       400:
+ *         description: Invalid input or renewal not allowed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *       404:
+ *         description: Loan item not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ */
 memberRouter.post(
   '/loans/:loanId/items/:bookId/:copiesSerial/renew',
   async (req: Request, res: Response<ApiResponse<any>>, next: NextFunction) => {

@@ -4,7 +4,90 @@ import { ApiResponse } from '../types';
 
 export const reservationRouter = Router();
 
-// M4: 建立預約
+/**
+ * @swagger
+ * /api/reservations:
+ *   post:
+ *     summary: Create a new reservation
+ *     description: Create a reservation for one or more books. Validates member status, book limit, and balance.
+ *     tags: [Reservations]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - member_id
+ *               - book_ids
+ *             properties:
+ *               member_id:
+ *                 type: integer
+ *                 description: Member ID
+ *                 example: 1
+ *               book_ids:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *                 description: Array of book IDs to reserve
+ *                 example: [1, 2, 3]
+ *     responses:
+ *       201:
+ *         description: Reservation created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiSuccess'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         reservation:
+ *                           $ref: '#/components/schemas/Reservation'
+ *                         book_ids:
+ *                           type: array
+ *                           items:
+ *                             type: integer
+ *       400:
+ *         description: Invalid input or business rule violation
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ *             examples:
+ *               invalidInput:
+ *                 value:
+ *                   success: false
+ *                   error:
+ *                     code: "INVALID_INPUT"
+ *                     message: "Missing member_id or book_ids"
+ *               memberInactive:
+ *                 value:
+ *                   success: false
+ *                   error:
+ *                     code: "MEMBER_INACTIVE"
+ *                     message: "Member status does not allow reservation"
+ *               maxBookExceeded:
+ *                 value:
+ *                   success: false
+ *                   error:
+ *                     code: "MAX_BOOK_EXCEEDED"
+ *                     message: "Exceeds member book limit"
+ *               insufficientBalance:
+ *                 value:
+ *                   success: false
+ *                   error:
+ *                     code: "INSUFFICIENT_BALANCE"
+ *                     message: "Insufficient balance for estimated rental cost"
+ *       404:
+ *         description: Member not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiError'
+ */
 reservationRouter.post(
   '/',
   async (req: Request, res: Response<ApiResponse<any>>, next: NextFunction) => {
