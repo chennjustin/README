@@ -1,4 +1,4 @@
-import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { MemberProvider, useMember } from './context/MemberContext';
 import { AdminProvider, useAdmin } from './context/AdminContext';
 import { MemberDashboard } from './pages/member/MemberDashboard';
@@ -41,13 +41,26 @@ function ProtectedAdminRoute({ children }: { children: React.ReactElement }) {
 
 function AppShell() {
   const location = useLocation();
+  const navigate = useNavigate();
   const isAdmin = location.pathname.startsWith('/admin');
-  const { memberId } = useMember();
-  const { admin } = useAdmin();
+  const { memberId, setMemberId } = useMember();
+  const { admin, setAuth } = useAdmin();
   // Check if member is logged in (memberId exists and is valid)
   const isLoggedIn = memberId !== null && Number.isFinite(memberId) && memberId > 0;
   // Check if admin is logged in (admin exists)
   const isAdminLoggedIn = admin !== null;
+
+  // Handle member logout
+  const handleMemberLogout = () => {
+    setMemberId(null);
+    navigate('/member/login', { replace: true });
+  };
+
+  // Handle admin logout
+  const handleAdminLogout = () => {
+    setAuth(null);
+    navigate('/admin/login', { replace: true });
+  };
 
   return (
     <div className="app-root">
@@ -129,6 +142,13 @@ function AppShell() {
                   >
                     熱門排行榜
                   </NavLink>
+                  <div className="app-sidebar-divider" />
+                  <button
+                    className="app-sidebar-logout-btn"
+                    onClick={handleMemberLogout}
+                  >
+                    登出
+                  </button>
                 </>
               ) : (
                 // Show only public pages when not logged in
@@ -215,6 +235,13 @@ function AppShell() {
                   >
                     報表 / 統計
                   </NavLink>
+                  <div className="app-sidebar-divider" />
+                  <button
+                    className="app-sidebar-logout-btn"
+                    onClick={handleAdminLogout}
+                  >
+                    登出
+                  </button>
                 </>
               ) : (
                 // Show only login page when not logged in
