@@ -151,55 +151,73 @@ function AppShell() {
           ) : (
             <>
               <div className="app-sidebar-section-title">Admin</div>
-              <NavLink
-                to="/admin"
-                end
-                className={({ isActive }) =>
-                  'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
-                }
-              >
-                登入 / 概覽
-              </NavLink>
-              <NavLink
-                to="/admin/members"
-                className={({ isActive }) =>
-                  'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
-                }
-              >
-                會員管理
-              </NavLink>
-              <NavLink
-                to="/admin/loans/borrow"
-                className={({ isActive }) =>
-                  'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
-                }
-              >
-                櫃檯借書
-              </NavLink>
-              <NavLink
-                to="/admin/loans/return"
-                className={({ isActive }) =>
-                  'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
-                }
-              >
-                櫃檯還書
-              </NavLink>
-              <NavLink
-                to="/admin/reservations"
-                className={({ isActive }) =>
-                  'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
-                }
-              >
-                預約管理
-              </NavLink>
-              <NavLink
-                to="/admin/stats"
-                className={({ isActive }) =>
-                  'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
-                }
-              >
-                報表 / 統計
-              </NavLink>
+              {isAdminLoggedIn ? (
+                // Show all pages when logged in
+                <>
+                  <NavLink
+                    to="/admin"
+                    end
+                    className={({ isActive }) =>
+                      'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
+                    }
+                  >
+                    登入 / 概覽
+                  </NavLink>
+                  <NavLink
+                    to="/admin/members"
+                    className={({ isActive }) =>
+                      'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
+                    }
+                  >
+                    會員管理
+                  </NavLink>
+                  <NavLink
+                    to="/admin/loans/borrow"
+                    className={({ isActive }) =>
+                      'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
+                    }
+                  >
+                    櫃檯借書
+                  </NavLink>
+                  <NavLink
+                    to="/admin/loans/return"
+                    className={({ isActive }) =>
+                      'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
+                    }
+                  >
+                    櫃檯還書
+                  </NavLink>
+                  <NavLink
+                    to="/admin/reservations"
+                    className={({ isActive }) =>
+                      'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
+                    }
+                  >
+                    預約管理
+                  </NavLink>
+                  <NavLink
+                    to="/admin/stats"
+                    className={({ isActive }) =>
+                      'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
+                    }
+                  >
+                    報表 / 統計
+                  </NavLink>
+                </>
+              ) : (
+                // Show only login page when not logged in
+                <>
+                  <NavLink
+                    to="/admin"
+                    end
+                    className={({ isActive }) =>
+                      'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
+                    }
+                  >
+                    管理端登入
+                  </NavLink>
+                </>
+              )}
             </>
           )}
         </aside>
