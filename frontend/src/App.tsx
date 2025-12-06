@@ -1,6 +1,6 @@
 import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { MemberProvider, useMember } from './context/MemberContext';
-import { AdminProvider } from './context/AdminContext';
+import { AdminProvider, useAdmin } from './context/AdminContext';
 import { MemberDashboard } from './pages/member/MemberDashboard';
 import { MemberLoginPage } from './pages/member/MemberLoginPage';
 import { BookSearchPage } from './pages/member/BookSearchPage';
@@ -31,8 +31,11 @@ function AppShell() {
   const location = useLocation();
   const isAdmin = location.pathname.startsWith('/admin');
   const { memberId } = useMember();
+  const { admin } = useAdmin();
   // Check if member is logged in (memberId exists and is valid)
   const isLoggedIn = memberId !== null && Number.isFinite(memberId) && memberId > 0;
+  // Check if admin is logged in (admin exists)
+  const isAdminLoggedIn = admin !== null;
 
   return (
     <div className="app-root">
