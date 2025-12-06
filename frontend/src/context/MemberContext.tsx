@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 
 interface MemberContextValue {
   memberId: number | null;
@@ -18,17 +18,21 @@ export const MemberProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   }, []);
 
-  const setMemberId = (id: number | null) => {
+  // Use useCallback to stabilize the setMemberId function reference
+  const setMemberId = useCallback((id: number | null) => {
     setMemberIdState(id);
     if (id == null) {
       window.localStorage.removeItem('memberId');
     } else {
       window.localStorage.setItem('memberId', String(id));
     }
-  };
+  }, []);
+
+  // Use useMemo to stabilize the context value object reference
+  const value = useMemo(() => ({ memberId, setMemberId }), [memberId, setMemberId]);
 
   return (
-    <MemberContext.Provider value={{ memberId, setMemberId }}>{children}</MemberContext.Provider>
+    <MemberContext.Provider value={value}>{children}</MemberContext.Provider>
   );
 };
 
