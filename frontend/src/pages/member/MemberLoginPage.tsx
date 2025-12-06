@@ -23,8 +23,10 @@ export function MemberLoginPage() {
     setError(null);
     try {
       const result = await memberApi.login(name, phone);
-      // Update context state, navigation will happen in useEffect when state is updated
+      // Update context state
       setMemberId(result.member_id);
+      // Immediately redirect and reload page after successful login
+      window.location.href = '/member';
     } catch (e: any) {
       // Handle specific error messages from backend
       // Error format from api.ts: "CODE: message"
