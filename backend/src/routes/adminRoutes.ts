@@ -116,6 +116,22 @@ adminRouter.post(
       const adminId = req.admin!.admin_id;
 
       const result = await withTransaction(async (client) => {
+        // Check if member with same name and phone already exists
+        const checkDuplicateSql = `
+          SELECT member_id, name, phone
+          FROM MEMBER
+          WHERE name = $1 AND phone = $2
+        `;
+        const duplicateRes = await client.query(checkDuplicateSql, [name, phone]);
+        if (duplicateRes.rowCount > 0) {
+          throw {
+            type: 'business',
+            status: 400,
+            code: 'MEMBER_ALREADY_EXISTS',
+            message: '該會員已註冊',
+          };
+        }
+
         // 找出符合初始餘額的會員等級（min_balance_required 最大但 <= initialBalance）
         const levelSql = `
           SELECT level_id
@@ -1676,6 +1692,466 @@ adminRouter.get(
 
       const result = await query(sql, [loanId]);
       return res.json({ success: true, data: result.rows });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// A16: 搜尋借閱記錄（用於還書介面）
+adminRouter.get(
+  '/loans/search',
+  requireAdmin,
+  async (req: AuthedRequest, res: Response<ApiResponse<any>>, next: NextFunction) => {
+    try {
+      const searchType = req.query.type as string;
+      const loanIdParam = req.query.loan_id as string | undefined;
+      const memberIdParam = req.query.member_id as string | undefined;
+
+      if (searchType !== 'loan_id' && searchType !== 'member_id') {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'INVALID_SEARCH_TYPE', message: '搜尋類型必須為 loan_id 或 member_id' },
+        });
+      }
+
+      let loans: any[] = [];
+
+      if (searchType === 'loan_id') {
+        const loanId = Number(loanIdParam);
+        if (!Number.isFinite(loanId)) {
+          return res.status(400).json({
+            success: false,
+            error: { code: 'INVALID_LOAN_ID', message: 'loan_id 格式錯誤' },
+          });
+        }
+
+        // Query BOOK_LOAN and its LOAN_RECORDS (only unreturned)
+        const sql = `
+          SELECT 
+            bl.loan_id,
+            bl.member_id,
+            m.name AS member_name,
+            MIN(lr.date_out) AS loan_date,
+            MAX(lr.due_date) AS max_due_date,
+            COALESCE(
+              json_agg(
+                jsonb_build_object(
+                  'loan_id', lr.loan_id,
+                  'book_id', lr.book_id,
+                  'copies_serial', lr.copies_serial,
+                  'book_name', b.name,
+                  'original_condition', bc.book_condition,
+                  'date_out', lr.date_out,
+                  'due_date', lr.due_date,
+                  'return_date', lr.return_date,
+                  'rental_fee', lr.rental_fee,
+                  'purchase_price', bc.purchase_price
+                )
+              ) FILTER (WHERE lr.loan_id IS NOT NULL),
+              '[]'::json
+            ) AS records
+          FROM BOOK_LOAN bl
+          JOIN MEMBER m ON bl.member_id = m.member_id
+          LEFT JOIN LOAN_RECORD lr ON bl.loan_id = lr.loan_id AND lr.return_date IS NULL
+          LEFT JOIN BOOK b ON lr.book_id = b.book_id
+          LEFT JOIN BOOK_COPIES bc ON lr.book_id = bc.book_id AND lr.copies_serial = bc.copies_serial
+          WHERE bl.loan_id = $1
+          GROUP BY bl.loan_id, bl.member_id, m.name
+          HAVING COUNT(lr.loan_id) FILTER (WHERE lr.return_date IS NULL) > 0
+        `;
+
+        const result = await query(sql, [loanId]);
+        loans = result.rows.map((row: any) => ({
+          loan_id: row.loan_id,
+          member_id: row.member_id,
+          member_name: row.member_name,
+          loan_date: row.loan_date,
+          max_due_date: row.max_due_date,
+          records: row.records || [],
+        }));
+      } else if (searchType === 'member_id') {
+        const memberId = Number(memberIdParam);
+        if (!Number.isFinite(memberId)) {
+          return res.status(400).json({
+            success: false,
+            error: { code: 'INVALID_MEMBER_ID', message: 'member_id 格式錯誤' },
+          });
+        }
+
+        // Query all BOOK_LOANs for the member with unreturned LOAN_RECORDS
+        const sql = `
+          SELECT 
+            bl.loan_id,
+            bl.member_id,
+            m.name AS member_name,
+            MIN(lr.date_out) AS loan_date,
+            MAX(lr.due_date) AS max_due_date,
+            COALESCE(
+              json_agg(
+                jsonb_build_object(
+                  'loan_id', lr.loan_id,
+                  'book_id', lr.book_id,
+                  'copies_serial', lr.copies_serial,
+                  'book_name', b.name,
+                  'original_condition', bc.book_condition,
+                  'date_out', lr.date_out,
+                  'due_date', lr.due_date,
+                  'return_date', lr.return_date,
+                  'rental_fee', lr.rental_fee,
+                  'purchase_price', bc.purchase_price
+                )
+              ) FILTER (WHERE lr.loan_id IS NOT NULL),
+              '[]'::json
+            ) AS records
+          FROM BOOK_LOAN bl
+          JOIN MEMBER m ON bl.member_id = m.member_id
+          LEFT JOIN LOAN_RECORD lr ON bl.loan_id = lr.loan_id AND lr.return_date IS NULL
+          LEFT JOIN BOOK b ON lr.book_id = b.book_id
+          LEFT JOIN BOOK_COPIES bc ON lr.book_id = bc.book_id AND lr.copies_serial = bc.copies_serial
+          WHERE bl.member_id = $1
+          GROUP BY bl.loan_id, bl.member_id, m.name
+          HAVING COUNT(lr.loan_id) FILTER (WHERE lr.return_date IS NULL) > 0
+          ORDER BY bl.loan_id DESC
+        `;
+
+        const result = await query(sql, [memberId]);
+        loans = result.rows.map((row: any) => ({
+          loan_id: row.loan_id,
+          member_id: row.member_id,
+          member_name: row.member_name,
+          loan_date: row.loan_date,
+          max_due_date: row.max_due_date,
+          records: row.records || [],
+        }));
+      }
+
+      return res.json({ success: true, data: { loans } });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// A17: 罰金試算 API
+adminRouter.post(
+  '/loans/calculate-fines',
+  requireAdmin,
+  async (req: AuthedRequest, res: Response<ApiResponse<any>>, next: NextFunction) => {
+    try {
+      const { items } = req.body || {};
+
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'INVALID_INPUT', message: 'items 必須為非空陣列' },
+        });
+      }
+
+      const todaySql = `SELECT CURRENT_DATE AS today`;
+      const todayRes = await query(todaySql);
+      const today = todayRes.rows[0].today;
+
+      // Get fee types
+      const feeTypesSql = `
+        SELECT type, base_amount, rate
+        FROM FEE_TYPE
+      `;
+      const feeTypesRes = await query(feeTypesSql);
+      const feeTypesMap: Record<string, { base_amount?: number; rate?: number }> = {};
+      feeTypesRes.rows.forEach((row: any) => {
+        feeTypesMap[row.type] = {
+          base_amount: row.base_amount ? Number(row.base_amount) : undefined,
+          rate: row.rate ? Number(row.rate) : undefined,
+        };
+      });
+
+      const results = await Promise.all(
+        items.map(async (item: any) => {
+          const { loan_id, book_id, copies_serial, final_condition, lost, due_date, purchase_price, original_condition } = item;
+
+          let overdueDays = 0;
+          let overdueFee = 0;
+          let damageFee = 0;
+          let lostFee = 0;
+
+          // Calculate overdue days and fee
+          if (due_date) {
+            const overdueDaysSql = `SELECT GREATEST((CAST($1 AS DATE) - CAST($2 AS DATE)), 0) AS days`;
+            const overdueDaysRes = await query(overdueDaysSql, [today, due_date]);
+            overdueDays = Number(overdueDaysRes.rows[0].days);
+
+            if (overdueDays > 0 && feeTypesMap['overdue']?.base_amount) {
+              overdueFee = overdueDays * feeTypesMap['overdue'].base_amount!;
+            }
+          }
+
+          // Calculate lost fee
+          if (lost && purchase_price && feeTypesMap['lost']?.rate) {
+            lostFee = Math.round(purchase_price * feeTypesMap['lost'].rate!);
+          }
+
+          // Calculate damage fee
+          if (!lost && final_condition && final_condition !== original_condition && purchase_price) {
+            let feeType: string | null = null;
+            if (original_condition === 'Good' && final_condition === 'Fair') {
+              feeType = 'damage_good_to_fair';
+            } else if (original_condition === 'Good' && final_condition === 'Poor') {
+              feeType = 'damage_good_to_poor';
+            } else if (original_condition === 'Fair' && final_condition === 'Poor') {
+              feeType = 'damage_fair_to_poor';
+            }
+
+            if (feeType && feeTypesMap[feeType]?.rate) {
+              damageFee = Math.round(purchase_price * feeTypesMap[feeType].rate!);
+            }
+          }
+
+          const total = overdueFee + damageFee + lostFee;
+
+          return {
+            loan_id,
+            book_id,
+            copies_serial,
+            fine_breakdown: {
+              overdue_fee: overdueFee,
+              damage_fee: damageFee,
+              lost_fee: lostFee,
+              total,
+            },
+            overdue_days: overdueDays,
+          };
+        })
+      );
+
+      return res.json({ success: true, data: { items: results } });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// Helper function to process a single return item
+async function processReturnItem(
+  client: any,
+  loanId: number,
+  bookId: number,
+  copiesSerial: number,
+  finalCondition: string | undefined,
+  lost: boolean,
+  immediateCharge: boolean
+): Promise<{ success: boolean; total_add_fee?: number; error?: string }> {
+  try {
+    // Lock the loan record and copy
+    const recordSql = `
+      SELECT 
+        lr.loan_id,
+        lr.book_id,
+        lr.copies_serial,
+        lr.date_out,
+        lr.due_date,
+        lr.return_date,
+        lr.rental_fee,
+        bl.member_id,
+        m.balance,
+        bc.book_condition AS original_condition,
+        bc.purchase_price
+      FROM LOAN_RECORD lr
+      JOIN BOOK_LOAN bl ON lr.loan_id = bl.loan_id
+      JOIN MEMBER m ON bl.member_id = m.member_id
+      JOIN BOOK_COPIES bc ON lr.book_id = bc.book_id AND lr.copies_serial = bc.copies_serial
+      WHERE lr.loan_id = $1
+        AND lr.book_id = $2
+        AND lr.copies_serial = $3
+      FOR UPDATE
+    `;
+    const recRes = await client.query(recordSql, [loanId, bookId, copiesSerial]);
+    if (recRes.rowCount === 0) {
+      return { success: false, error: '找不到借閱紀錄' };
+    }
+    const rec = recRes.rows[0];
+
+    if (rec.return_date) {
+      return { success: false, error: '已經還書' };
+    }
+
+    const todaySql = `SELECT CURRENT_DATE AS today`;
+    const todayRes = await client.query(todaySql);
+    const today = todayRes.rows[0].today;
+
+    // Update return date
+    const updateReturnSql = `
+      UPDATE LOAN_RECORD
+      SET return_date = $1
+      WHERE loan_id = $2 AND book_id = $3 AND copies_serial = $4
+    `;
+    await client.query(updateReturnSql, [today, loanId, bookId, copiesSerial]);
+
+    let totalAddFee = 0;
+
+    // Calculate overdue fee
+    const overdueDaysSql = `SELECT GREATEST((CAST($1 AS DATE) - CAST($2 AS DATE)), 0) AS days`;
+    const overdueDaysRes = await client.query(overdueDaysSql, [today, rec.due_date]);
+    const overdueDays = Number(overdueDaysRes.rows[0].days);
+
+    if (overdueDays > 0) {
+      const feeTypeSql = `SELECT base_amount FROM FEE_TYPE WHERE type = 'overdue'`;
+      const feeTypeRes = await client.query(feeTypeSql);
+      const baseAmount = feeTypeRes.rowCount && feeTypeRes.rowCount > 0 ? Number(feeTypeRes.rows[0].base_amount) || 10 : 10;
+      const amount = overdueDays * baseAmount;
+      totalAddFee += amount;
+
+      const insertOverdueSql = `
+        INSERT INTO ADD_FEE (loan_id, book_id, copies_serial, type, amount, date)
+        VALUES ($1, $2, $3, 'overdue', $4, $5)
+      `;
+      await client.query(insertOverdueSql, [loanId, bookId, copiesSerial, amount, today]);
+    }
+
+    // Handle lost or damage
+    let newCondition = rec.original_condition;
+    if (lost) {
+      // Lost fee
+      const feeTypeSql = `SELECT rate FROM FEE_TYPE WHERE type = 'lost'`;
+      const feeTypeRes = await client.query(feeTypeSql);
+      const rate = feeTypeRes.rowCount && feeTypeRes.rowCount > 0 ? Number(feeTypeRes.rows[0].rate) || 1.0 : 1.0;
+      const amount = Math.round(rec.purchase_price * rate);
+      totalAddFee += amount;
+
+      const insertLostSql = `
+        INSERT INTO ADD_FEE (loan_id, book_id, copies_serial, type, amount, date)
+        VALUES ($1, $2, $3, 'lost', $4, $5)
+      `;
+      await client.query(insertLostSql, [loanId, bookId, copiesSerial, amount, today]);
+
+      const updCopySql = `
+        UPDATE BOOK_COPIES
+        SET status = 'Lost'
+        WHERE book_id = $1 AND copies_serial = $2
+      `;
+      await client.query(updCopySql, [bookId, copiesSerial]);
+    } else if (finalCondition && finalCondition !== rec.original_condition) {
+      newCondition = finalCondition;
+
+      let feeType: string | null = null;
+      if (rec.original_condition === 'Good' && finalCondition === 'Fair') {
+        feeType = 'damage_good_to_fair';
+      } else if (rec.original_condition === 'Good' && finalCondition === 'Poor') {
+        feeType = 'damage_good_to_poor';
+      } else if (rec.original_condition === 'Fair' && finalCondition === 'Poor') {
+        feeType = 'damage_fair_to_poor';
+      }
+
+      if (feeType) {
+        const feeTypeSql = `SELECT rate FROM FEE_TYPE WHERE type = $1`;
+        const feeTypeRes = await client.query(feeTypeSql, [feeType]);
+        const rate = feeTypeRes.rowCount && feeTypeRes.rowCount > 0 ? Number(feeTypeRes.rows[0].rate) || 0 : 0;
+        const amount = Math.round(rec.purchase_price * rate);
+        if (amount > 0) {
+          totalAddFee += amount;
+          const insertDamageSql = `
+            INSERT INTO ADD_FEE (loan_id, book_id, copies_serial, type, amount, date)
+            VALUES ($1, $2, $3, $4, $5, $6)
+          `;
+          await client.query(insertDamageSql, [loanId, bookId, copiesSerial, feeType, amount, today]);
+        }
+      }
+
+      const updCopySql = `
+        UPDATE BOOK_COPIES
+        SET book_condition = $1,
+            status = 'Available'
+        WHERE book_id = $2 AND copies_serial = $3
+      `;
+      await client.query(updCopySql, [newCondition, bookId, copiesSerial]);
+    } else {
+      // No change, just return
+      const updCopySql = `
+        UPDATE BOOK_COPIES
+        SET status = 'Available'
+        WHERE book_id = $1 AND copies_serial = $2
+      `;
+      await client.query(updCopySql, [bookId, copiesSerial]);
+    }
+
+    // Charge member if requested
+    if (immediateCharge && totalAddFee > 0) {
+      const updMemberSql = `
+        UPDATE MEMBER
+        SET balance = balance - $1
+        WHERE member_id = $2
+      `;
+      await client.query(updMemberSql, [totalAddFee, rec.member_id]);
+    }
+
+    return { success: true, total_add_fee: totalAddFee };
+  } catch (err: any) {
+    return { success: false, error: err.message || '處理還書時發生錯誤' };
+  }
+}
+
+// A18: 批次還書 API
+adminRouter.post(
+  '/loans/batch-return',
+  requireAdmin,
+  async (req: AuthedRequest, res: Response<ApiResponse<any>>, next: NextFunction) => {
+    try {
+      const { items } = req.body || {};
+
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'INVALID_INPUT', message: 'items 必須為非空陣列' },
+        });
+      }
+
+      const result = await withTransaction(async (client) => {
+        const results = await Promise.all(
+          items.map(async (item: any) => {
+            const { loan_id, book_id, copies_serial, final_condition, lost = false, immediateCharge = false } = item;
+
+            if (!Number.isFinite(loan_id) || !Number.isFinite(book_id) || !Number.isFinite(copies_serial)) {
+              return {
+                loan_id,
+                book_id,
+                copies_serial,
+                success: false,
+                error: '參數格式錯誤',
+              };
+            }
+
+            const returnResult = await processReturnItem(
+              client,
+              loan_id,
+              book_id,
+              copies_serial,
+              final_condition,
+              lost,
+              immediateCharge
+            );
+
+            return {
+              loan_id,
+              book_id,
+              copies_serial,
+              success: returnResult.success,
+              error: returnResult.error,
+              total_add_fee: returnResult.total_add_fee,
+            };
+          })
+        );
+
+        const successCount = results.filter((r) => r.success).length;
+        const failCount = results.filter((r) => !r.success).length;
+
+        return {
+          success_count: successCount,
+          fail_count: failCount,
+          results,
+        };
+      });
+
+      return res.json({ success: true, data: result });
     } catch (err) {
       next(err);
     }

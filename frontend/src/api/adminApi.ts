@@ -6,6 +6,11 @@ import {
   LoanSummary,
   LoanRecordDetail,
   BorrowPreview,
+  LoanSearchResult,
+  FineCalculationRequest,
+  FineCalculationResponse,
+  BatchReturnItem,
+  BatchReturnResponse,
 } from '../types';
 
 export const adminApi = {
@@ -106,6 +111,43 @@ export const adminApi = {
     params.append('copies_serial', String(copiesSerial));
     return api.get<BorrowPreview>(
       `/api/admin/borrow/preview?${params.toString()}`,
+      this.headers(token)
+    );
+  },
+  searchLoans(
+    token: string,
+    type: 'loan_id' | 'member_id',
+    value: number
+  ): Promise<{ loans: LoanSearchResult[] }> {
+    const params = new URLSearchParams();
+    params.append('type', type);
+    if (type === 'loan_id') {
+      params.append('loan_id', String(value));
+    } else {
+      params.append('member_id', String(value));
+    }
+    return api.get<{ loans: LoanSearchResult[] }>(
+      `/api/admin/loans/search?${params.toString()}`,
+      this.headers(token)
+    );
+  },
+  calculateFines(
+    token: string,
+    items: FineCalculationRequest[]
+  ): Promise<FineCalculationResponse> {
+    return api.post<FineCalculationResponse>(
+      '/api/admin/loans/calculate-fines',
+      { items },
+      this.headers(token)
+    );
+  },
+  batchReturn(
+    token: string,
+    items: BatchReturnItem[]
+  ): Promise<BatchReturnResponse> {
+    return api.post<BatchReturnResponse>(
+      '/api/admin/loans/batch-return',
+      { items },
       this.headers(token)
     );
   },

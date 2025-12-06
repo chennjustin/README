@@ -177,4 +177,87 @@ export interface BorrowPreview {
   rental_fee: number;
 }
 
+// Return search related types
+export interface LoanSearchRecord {
+  loan_id: number;
+  book_id: number;
+  copies_serial: number;
+  book_name: string;
+  original_condition: string;
+  date_out: string;
+  due_date: string;
+  return_date: string | null;
+  rental_fee: number;
+  purchase_price: number;
+}
+
+export interface LoanSearchResult {
+  loan_id: number;
+  member_id: number;
+  member_name: string;
+  loan_date: string;
+  max_due_date: string;
+  records: LoanSearchRecord[];
+}
+
+export interface LoanSearchResponse {
+  loans: LoanSearchRecord[];
+}
+
+// Fine calculation related types
+export interface FineBreakdown {
+  overdue_fee: number;
+  damage_fee: number;
+  lost_fee: number;
+  total: number;
+}
+
+export interface FineCalculationItem {
+  loan_id: number;
+  book_id: number;
+  copies_serial: number;
+  fine_breakdown: FineBreakdown;
+  overdue_days: number;
+}
+
+export interface FineCalculationRequest {
+  loan_id: number;
+  book_id: number;
+  copies_serial: number;
+  final_condition?: string;
+  lost: boolean;
+  due_date: string;
+  purchase_price: number;
+  original_condition: string;
+}
+
+export interface FineCalculationResponse {
+  items: FineCalculationItem[];
+}
+
+// Batch return related types
+export interface BatchReturnItem {
+  loan_id: number;
+  book_id: number;
+  copies_serial: number;
+  final_condition?: string;
+  lost: boolean;
+  immediateCharge: boolean;
+}
+
+export interface BatchReturnResult {
+  loan_id: number;
+  book_id: number;
+  copies_serial: number;
+  success: boolean;
+  error?: string;
+  total_add_fee?: number;
+}
+
+export interface BatchReturnResponse {
+  success_count: number;
+  fail_count: number;
+  results: BatchReturnResult[];
+}
+
 

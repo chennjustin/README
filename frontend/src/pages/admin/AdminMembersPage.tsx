@@ -37,15 +37,36 @@ export function AdminMembersPage() {
   const onCreate = async (e: FormEvent) => {
     e.preventDefault();
     if (!requireToken()) return;
-    setLoading(true);
+
+    // Validate all fields are filled
     setError(null);
     setMessage(null);
+
+    if (!createForm.name || createForm.name.trim() === '') {
+      setError('請填寫姓名欄位');
+      return;
+    }
+    if (!createForm.phone || createForm.phone.trim() === '') {
+      setError('請填寫電話欄位');
+      return;
+    }
+    if (!createForm.email || createForm.email.trim() === '') {
+      setError('請填寫Email欄位');
+      return;
+    }
+
+    setLoading(true);
     try {
       await adminApi.createMember(token!, createForm);
-      setMessage('新增會員成功。');
+      setMessage('新增會員成功！');
       setCreateForm({ name: '', phone: '', email: '', initialBalance: 0 });
     } catch (e: any) {
-      setError(e.message);
+      // Handle specific error messages from backend
+      if (e.message && e.message.includes('該會員已註冊')) {
+        setError('該會員已註冊');
+      } else {
+        setError(e.message || '新增會員失敗');
+      }
     } finally {
       setLoading(false);
     }
