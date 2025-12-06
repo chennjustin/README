@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { adminApi } from '../../api/adminApi';
 import { useAdmin } from '../../context/AdminContext';
+import { formatDate } from '../../utils/dateFormat';
 
 export function AdminReservationsPage() {
   const { token } = useAdmin();
@@ -190,7 +191,7 @@ export function AdminReservationsPage() {
               <tr key={r.reservation_id}>
                 <td>{r.reservation_id}</td>
                 <td>{r.member_name}</td>
-                <td>{r.reserve_date}</td>
+                <td>{formatDate(r.reserve_date)}</td>
                 <td>{r.status}</td>
                 <td>
                   {r.books?.map((b: any) => (

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { adminApi } from '../../api/adminApi';
 import { useAdmin } from '../../context/AdminContext';
 import { MemberDetail, LoanSummary, LoanRecordDetail } from '../../types';
+import { formatDate } from '../../utils/dateFormat';
 
 export function AdminMemberDetailPage() {
   const { memberId: memberIdParam } = useParams<{ memberId: string }>();
@@ -194,7 +195,7 @@ export function AdminMemberDetailPage() {
             <strong>借閱天數：</strong> {memberDetail.hold_days}
           </div>
           <div>
-            <strong>加入日期：</strong> {memberDetail.join_date}
+            <strong>加入日期：</strong> {formatDate(memberDetail.join_date)}
           </div>
         </div>
         <button className="btn btn-secondary" onClick={() => navigate('/admin/members')}>
@@ -266,7 +267,7 @@ export function AdminMemberDetailPage() {
                 <tr key={topUp.top_up_id}>
                   <td>{topUp.top_up_id}</td>
                   <td>{topUp.amount}</td>
-                  <td>{topUp.top_up_date}</td>
+                  <td>{formatDate(topUp.top_up_date)}</td>
                   <td>{topUp.admin_name}</td>
                 </tr>
               ))}
@@ -298,7 +299,7 @@ export function AdminMemberDetailPage() {
               {loans.map((loan) => (
                 <tr key={loan.loan_id}>
                   <td>{loan.loan_id}</td>
-                  <td>{loan.loan_date}</td>
+                  <td>{formatDate(loan.loan_date)}</td>
                   <td>{loan.final_price}</td>
                   <td>{loan.item_count}</td>
                   <td>{loan.active_count}</td>
@@ -351,9 +352,9 @@ export function AdminMemberDetailPage() {
                           <td>{record.book_name}</td>
                           <td>{record.author}</td>
                           <td>{record.publisher || '-'}</td>
-                          <td>{record.date_out}</td>
-                          <td>{record.due_date}</td>
-                          <td>{record.return_date || '未歸還'}</td>
+                          <td>{formatDate(record.date_out)}</td>
+                          <td>{formatDate(record.due_date)}</td>
+                          <td>{record.return_date ? formatDate(record.return_date) : '未歸還'}</td>
                           <td>{record.rental_fee}</td>
                           <td>{record.renew_cnt}</td>
                           <td>{record.book_condition}</td>
@@ -362,7 +363,7 @@ export function AdminMemberDetailPage() {
                               <div>
                                 {record.add_fees.map((fee, feeIdx) => (
                                   <div key={feeIdx}>
-                                    {fee.type}: {fee.amount} ({fee.date})
+                                    {fee.type}: {fee.amount} ({formatDate(fee.date)})
                                   </div>
                                 ))}
                               </div>

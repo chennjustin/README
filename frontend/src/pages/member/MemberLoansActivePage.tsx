@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { memberApi } from '../../api/memberApi';
 import { useMember } from '../../context/MemberContext';
 import { LoanItem } from '../../types';
+import { formatDate } from '../../utils/dateFormat';
 
 export function MemberLoansActivePage() {
   const { memberId } = useMember();
@@ -41,6 +42,36 @@ export function MemberLoansActivePage() {
     }
   };
 
+  // 檢查是否可以續借
+  const canRenew = (item: LoanItem): boolean => {
+    // 已續借過就不能再續借
+    if (item.renew_cnt >= 1) return false;
+    
+    // 檢查是否已到期（期限當天也可以續借）
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const dueDate = new Date(item.due_date);
+    dueDate.setHours(0, 0, 0, 0);
+    
+    // 如果到期日期在今天或之後，可以續借
+    return dueDate >= today;
+  };
+
+  // 獲取續借狀態文字
+  const getRenewStatus = (item: LoanItem): string => {
+    if (item.renew_cnt >= 1) return '已續借';
+    if (canRenew(item)) return '可續借';
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const dueDate = new Date(item.due_date);
+    dueDate.setHours(0, 0, 0, 0);
+    
+    if (dueDate < today) return '已逾期，無法續借';
+    return '不可續借';
+  };
+
+
   return (
     <div className="card">
       <div className="card-title">目前借閱中</div>
@@ -62,7 +93,7 @@ export function MemberLoansActivePage() {
                   <th>借出日期</th>
                   <th>到期日</th>
                   <th>租金</th>
-                  <th>已續借</th>
+                  <th>續借狀態</th>
                   <th>額外費用</th>
                   <th>操作</th>
                 </tr>
@@ -73,20 +104,24 @@ export function MemberLoansActivePage() {
                     <td>{r.loan_id}</td>
                     <td>{r.book_name}</td>
                     <td>{r.copies_serial}</td>
-                    <td>{r.date_out}</td>
-                    <td>{r.due_date}</td>
+                    <td>{formatDate(r.date_out)}</td>
+                    <td>{formatDate(r.due_date)}</td>
                     <td>{r.rental_fee}</td>
-                    <td>{r.renew_cnt}</td>
+                    <td>
+                      <span className={r.renew_cnt >= 1 ? 'text-muted' : canRenew(r) ? 'text-success' : 'text-error'}>
+                        {getRenewStatus(r)}
+                      </span>
+                      {r.renew_cnt >= 1 && <span className="text-muted"> ({r.renew_cnt} 次)</span>}
+                    </td>
                     <td>{r.add_fee_total}</td>
                     <td>
-                      {r.renew_cnt < 1 && (
-                        <button
-                          className="btn btn-primary"
-                          onClick={() => renew(r.loan_id, r.book_id, r.copies_serial)}
-                        >
-                          續借
-                        </button>
-                      )}
+                      <button
+                        className={canRenew(r) ? 'btn btn-primary' : 'btn btn-secondary'}
+                        onClick={() => canRenew(r) && renew(r.loan_id, r.book_id, r.copies_serial)}
+                        disabled={!canRenew(r)}
+                      >
+                        續借
+                      </button>
                     </td>
                   </tr>
                 ))}

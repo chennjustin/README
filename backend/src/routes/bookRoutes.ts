@@ -9,7 +9,7 @@ bookRouter.get(
   '/',
   async (req: Request, res: Response<ApiResponse<any>>, next: NextFunction) => {
     try {
-      const { keyword, author, publisher, categoryId, memberId } = req.query;
+      const { keyword, author, publisher, categoryId, memberId, minPrice, maxPrice } = req.query;
       const conditions: string[] = [];
       const params: any[] = [];
 
@@ -31,6 +31,14 @@ bookRouter.get(
           SELECT 1 FROM BOOK_CATEGORY bc2
           WHERE bc2.book_id = b.book_id AND bc2.category_id = $${params.length}
         )`);
+      }
+      if (minPrice) {
+        params.push(Number(minPrice));
+        conditions.push(`b.price >= $${params.length}`);
+      }
+      if (maxPrice) {
+        params.push(Number(maxPrice));
+        conditions.push(`b.price <= $${params.length}`);
       }
 
       const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -93,6 +101,24 @@ bookRouter.get(
       `;
 
       const result = await query(sql, params);
+      return res.json({ success: true, data: result.rows });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// 獲取所有類別列表
+bookRouter.get(
+  '/categories',
+  async (req: Request, res: Response<ApiResponse<any>>, next: NextFunction) => {
+    try {
+      const sql = `
+        SELECT category_id, name
+        FROM CATEGORY
+        ORDER BY name
+      `;
+      const result = await query(sql, []);
       return res.json({ success: true, data: result.rows });
     } catch (err) {
       next(err);

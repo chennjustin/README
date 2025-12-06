@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { memberApi } from '../../api/memberApi';
 import { useMember } from '../../context/MemberContext';
 import { ReservationItem } from '../../types';
+import { formatDate } from '../../utils/dateFormat';
 
 export function MemberReservationsPage() {
   const { memberId } = useMember();
@@ -67,7 +68,7 @@ export function MemberReservationsPage() {
                 {items.map((r) => (
                   <tr key={r.reservation_id}>
                     <td>{r.reservation_id}</td>
-                    <td>{r.reserve_date}</td>
+                    <td>{formatDate(r.reserve_date)}</td>
                     <td>{r.status}</td>
                     <td>
                       {r.books?.map((b) => (

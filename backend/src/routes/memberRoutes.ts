@@ -148,6 +148,7 @@ memberRouter.get(
         JOIN RESERVATION_RECORD rr ON r.reservation_id = rr.reservation_id
         JOIN BOOK b ON rr.book_id = b.book_id
         WHERE r.member_id = $1
+          AND r.status = 'Active'
         GROUP BY r.reservation_id
         ORDER BY r.reserve_date DESC, r.reservation_id DESC
       `;
@@ -335,13 +336,11 @@ memberRouter.post(
             bl.member_id,
             m.status AS member_status,
             m.balance,
-            l.hold_days,
-            ft.base_amount AS renew_fee
+            l.hold_days
           FROM LOAN_RECORD lr
           JOIN BOOK_LOAN bl ON lr.loan_id = bl.loan_id
           JOIN MEMBER m ON bl.member_id = m.member_id
           JOIN MEMBERSHIP_LEVEL l ON m.level_id = l.level_id
-          JOIN FEE_TYPE ft ON ft.type = 'renew'
           WHERE lr.loan_id = $1
             AND lr.book_id = $2
             AND lr.copies_serial = $3
@@ -379,6 +378,21 @@ memberRouter.post(
           };
         }
 
+        // 檢查是否已到期（期限當天也可以續借）
+        // due_date 是 DATE 類型，使用 SQL 比較更準確
+        const todayCheckSql = `SELECT CURRENT_DATE > $1::DATE AS is_overdue`;
+        const todayCheckRes = await client.query(todayCheckSql, [row.due_date]);
+        const isOverdue = todayCheckRes.rows[0]?.is_overdue;
+        
+        if (isOverdue) {
+          throw {
+            type: 'business',
+            status: 400,
+            code: 'ALREADY_OVERDUE',
+            message: '此書已逾期，無法續借',
+          };
+        }
+
         if (row.member_status !== 'Active') {
           throw {
             type: 'business',
@@ -388,7 +402,8 @@ memberRouter.post(
           };
         }
 
-        const renewFee: number = row.renew_fee || 0;
+        // 續借費用固定為 $10
+        const renewFee: number = 10;
         if (row.balance < renewFee) {
           throw {
             type: 'business',

@@ -31,6 +31,17 @@ a {
   text-decoration: none;
 }
 
+.link {
+  color: #2563eb;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.link:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
 .app-root {
   min-height: 100vh;
   display: flex;
@@ -419,7 +430,10 @@ a {
 
 .btn:disabled {
   opacity: 0.5;
-  cursor: default;
+  cursor: not-allowed;
+  background-color: #e5e7eb;
+  color: #9ca3af;
+  border-color: #e5e7eb;
 }
 
 .table {
@@ -458,6 +472,16 @@ a {
   color: #b91c1c;
   font-size: 0.85rem;
   margin-top: 0.25rem;
+}
+
+.text-success {
+  color: var(--primary-green);
+  font-weight: 500;
+}
+
+.text-error {
+  color: #dc2626;
+  font-weight: 500;
 }
 
 .flex-between {

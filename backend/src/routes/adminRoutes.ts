@@ -1160,13 +1160,11 @@ adminRouter.post(
             bl.member_id,
             m.status AS member_status,
             m.balance,
-            l.hold_days,
-            ft.base_amount AS renew_fee
+            l.hold_days
           FROM LOAN_RECORD lr
           JOIN BOOK_LOAN bl ON lr.loan_id = bl.loan_id
           JOIN MEMBER m ON bl.member_id = m.member_id
           JOIN MEMBERSHIP_LEVEL l ON m.level_id = l.level_id
-          JOIN FEE_TYPE ft ON ft.type = 'renew'
           WHERE lr.loan_id = $1
             AND lr.book_id = $2
             AND lr.copies_serial = $3
@@ -1208,7 +1206,8 @@ adminRouter.post(
           };
         }
 
-        const renewFee: number = row.renew_fee || 0;
+        // 續借費用固定為 $10
+        const renewFee: number = 10;
         if (row.balance < renewFee) {
           throw {
             type: 'business',
@@ -1592,7 +1591,7 @@ adminRouter.post(
           LIMIT 1
         `;
         const levelRes = await client.query(levelSql, [amount]);
-        if (levelRes.rowCount > 0) {
+        if (levelRes.rowCount && levelRes.rowCount > 0) {
           const newLevelId = levelRes.rows[0].level_id;
           const updateLevelSql = `
             UPDATE MEMBER

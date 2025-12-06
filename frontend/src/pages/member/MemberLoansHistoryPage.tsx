@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { memberApi } from '../../api/memberApi';
 import { useMember } from '../../context/MemberContext';
 import { LoanItem } from '../../types';
+import { formatDate } from '../../utils/dateFormat';
 
 export function MemberLoansHistoryPage() {
   const { memberId } = useMember();
@@ -62,9 +63,9 @@ export function MemberLoansHistoryPage() {
                     <td>{r.loan_id}</td>
                     <td>{r.book_name}</td>
                     <td>{r.copies_serial}</td>
-                    <td>{r.date_out}</td>
-                    <td>{r.due_date}</td>
-                    <td>{r.return_date}</td>
+                    <td>{formatDate(r.date_out)}</td>
+                    <td>{formatDate(r.due_date)}</td>
+                    <td>{r.return_date ? formatDate(r.return_date) : '未歸還'}</td>
                     <td>{r.rental_fee}</td>
                     <td>{r.add_fee_total}</td>
                   </tr>

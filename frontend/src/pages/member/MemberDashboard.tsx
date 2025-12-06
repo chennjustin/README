@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { memberApi } from '../../api/memberApi';
 import { useMember } from '../../context/MemberContext';
 import { MemberProfile } from '../../types';
+import { formatDate } from '../../utils/dateFormat';
 
 export function MemberDashboard() {
   const { memberId } = useMember();
@@ -54,7 +55,7 @@ export function MemberDashboard() {
             <div className="form-row">
               <div className="form-field">
                 <span className="form-label">加入日期</span>
-                <span>{profile.join_date}</span>
+                <span>{formatDate(profile.join_date)}</span>
               </div>
               <div className="form-field">
                 <span className="form-label">狀態</span>
