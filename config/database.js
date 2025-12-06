@@ -15,9 +15,32 @@ const supabaseConfig = {
 };
 
 // PostgreSQL 直接連接配置
+const { Pool } = require('pg');
 const postgresConfig = {
   connectionString: process.env.DATABASE_URL || process.env.DATABASE_POOL_URL,
 };
+
+// 建立 PostgreSQL 連接池（用於後端開發）
+let postgresPool = null;
+function getPostgresPool() {
+  if (!postgresConfig.connectionString) {
+    throw new Error('缺少 DATABASE_URL 或 DATABASE_POOL_URL 環境變數');
+  }
+  
+  if (!postgresPool) {
+    postgresPool = new Pool({
+      connectionString: postgresConfig.connectionString,
+      ssl: {
+        rejectUnauthorized: false // Supabase 需要 SSL
+      },
+      max: 20, // 最大連接數
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 2000,
+    });
+  }
+  
+  return postgresPool;
+}
 
 // ============================================
 // MongoDB 配置
@@ -60,6 +83,7 @@ function validateConfig() {
 module.exports = {
   supabase: supabaseConfig,
   postgres: postgresConfig,
+  postgresPool: getPostgresPool, // 取得 PostgreSQL 連接池的函數
   mongodb: mongodbConfig,
   validate: validateConfig,
 };
