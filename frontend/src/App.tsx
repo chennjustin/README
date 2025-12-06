@@ -80,7 +80,7 @@ function AppShell() {
               <line x1="3" y1="18" x2="21" y2="18"></line>
             </svg>
           </button>
-          <div className="app-header-title">獨立租借書店系統</div>
+          <div className="app-header-title">ReadMe!</div>
         </div>
         <div className="app-header-right">
           <div className="app-header-search">

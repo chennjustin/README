@@ -22,7 +22,7 @@
 body {
   margin: 0;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background-color: var(--berkeley-light);
+  background-color: #EAE9E3;
   color: var(--berkeley-text);
 }
 
@@ -341,7 +341,7 @@ a {
 
 .app-content {
   padding: 2rem;
-  background: #f9fafb;
+  background: #EAE9E3;
   min-height: calc(100vh - 73px);
 }
 
@@ -353,6 +353,8 @@ a {
   margin-bottom: 1.5rem;
   box-shadow: var(--card-shadow);
   transition: box-shadow 0.2s;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .card:hover {
@@ -605,6 +607,118 @@ a {
   display: flex;
   gap: 0.75rem;
   margin-top: 1rem;
+}
+
+/* 書籍卡片網格 */
+.book-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+  width: 100%;
+}
+
+@media (max-width: 1024px) {
+  .book-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .book-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 書籍卡片 */
+.book-card {
+  background: white;
+  border-radius: 8px;
+  padding: 1rem;
+  box-shadow: var(--card-shadow);
+  transition: all 0.2s;
+  text-decoration: none;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  min-height: 160px;
+  cursor: pointer;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.book-card:hover {
+  box-shadow: var(--card-shadow-hover);
+  transform: translateY(-2px);
+}
+
+.book-card-unavailable {
+  background: #f3f4f6;
+  opacity: 0.8;
+}
+
+.book-card-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 0.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.book-card-author {
+  font-size: 0.875rem;
+  color: #374151;
+  margin-bottom: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.book-card-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: auto;
+  justify-content: flex-start;
+}
+
+.book-card-tag {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  background-color: var(--light-green);
+  color: var(--primary-green);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.book-card-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: auto;
+  padding-top: 0.75rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.book-card-status {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.book-card-status-available {
+  color: var(--primary-green);
+  font-weight: 500;
+}
+
+.book-card-price {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #111827;
 }
 
 /* 響應式設計 */
