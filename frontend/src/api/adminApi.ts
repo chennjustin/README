@@ -1,5 +1,11 @@
 import { api } from '../config/api';
-import { AdminLoginResult } from '../types';
+import {
+  AdminLoginResult,
+  MemberSearchResult,
+  MemberDetail,
+  LoanSummary,
+  LoanRecordDetail,
+} from '../types';
 
 export const adminApi = {
   async login(name: string, phone: string): Promise<AdminLoginResult> {
@@ -67,6 +73,25 @@ export const adminApi = {
   },
   getFeeTypes(token: string) {
     return api.get('/api/admin/fee-types', this.headers(token));
+  },
+  searchMembers(token: string, params: { memberId?: string; name?: string }): Promise<MemberSearchResult[]> {
+    const queryParams = new URLSearchParams();
+    if (params.memberId) queryParams.append('memberId', params.memberId);
+    if (params.name) queryParams.append('name', params.name);
+    const qs = queryParams.toString() ? `?${queryParams.toString()}` : '';
+    return api.get<MemberSearchResult[]>(`/api/admin/members/search${qs}`, this.headers(token));
+  },
+  getMemberDetail(token: string, memberId: number): Promise<MemberDetail> {
+    return api.get<MemberDetail>(`/api/admin/members/${memberId}`, this.headers(token));
+  },
+  createTopUp(token: string, memberId: number, amount: number) {
+    return api.post(`/api/admin/members/${memberId}/top-up`, { amount }, this.headers(token));
+  },
+  getMemberLoans(token: string, memberId: number): Promise<LoanSummary[]> {
+    return api.get<LoanSummary[]>(`/api/admin/members/${memberId}/loans`, this.headers(token));
+  },
+  getLoanRecords(token: string, loanId: number): Promise<LoanRecordDetail[]> {
+    return api.get<LoanRecordDetail[]>(`/api/admin/loans/${loanId}/records`, this.headers(token));
   },
 };
 
