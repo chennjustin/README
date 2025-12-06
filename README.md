@@ -24,12 +24,17 @@ README/
 │   └── setup_non-relational.sh  # 非關聯式資料庫設定腳本
 ├── config/                 # 配置檔案
 │   └── database.js        # 資料庫連接配置模組
-├── examples/               # 連接範例
-│   ├── connect-supabase.js    # Supabase 連接範例
-│   ├── connect-postgres.js    # PostgreSQL 連接範例
-│   ├── connect-mongodb.js     # MongoDB 連接範例
-│   ├── connect-python.py       # Python 連接範例
-│   └── test-connections.js     # 連接測試腳本
+├── examples/               # 範例與工具腳本
+│   ├── connect-supabase.js         # Supabase 連接範例
+│   ├── connect-postgres.js        # PostgreSQL 連接範例
+│   ├── connect-mongodb.js         # MongoDB 連接範例
+│   ├── connect-python.py           # Python 連接範例
+│   ├── test-connections.js        # 連接測試腳本
+│   ├── diagnose-postgres.js       # PostgreSQL 連接診斷工具
+│   ├── diagnose-mongodb.js         # MongoDB 連接診斷工具
+│   ├── run-mock-data.js            # 執行虛擬資料生成
+│   ├── verify-data-consistency.js  # 驗證資料一致性
+│   └── verify-deployment.sql       # 部署驗證查詢
 ├── docs/                   # 文檔
 │   └── CONNECTION_GUIDE.md    # 資料庫連接指南
 ├── .env.example           # 環境變數範例
