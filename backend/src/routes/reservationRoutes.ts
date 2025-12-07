@@ -148,13 +148,31 @@ reservationRouter.post(
           }
         }
 
-        // 對每個 book_id，自動選擇並鎖定一個 available 複本
+        // 對每個 book_id，重新檢查可用性並自動選擇並鎖定一個 available 複本
         const reservedCopies: { book_id: number; copies_serial: number }[] = [];
         for (const bid of book_ids) {
+          // 重新檢查該書籍是否仍有至少一個可借閱複本（避免在鎖定前被其他操作搶走）
+          const checkAvailableSql = `
+            SELECT COUNT(*) AS available_count
+            FROM BOOK_COPIES
+            WHERE book_id = $1 AND status = 'Available'
+          `;
+          const checkAvailableRes = await client.query(checkAvailableSql, [bid]);
+          const availableCount = Number(checkAvailableRes.rows[0]?.available_count || 0);
+          
+          if (availableCount === 0) {
+            throw {
+              type: 'business',
+              status: 400,
+              code: 'NO_AVAILABLE_COPY',
+              message: `書籍 ${bid} 無可預約複本`,
+            };
+          }
+
           // 查詢並鎖定 available 複本
           // PostgreSQL 不支援 SELECT ... FOR UPDATE LIMIT 1，需要使用子查詢
           const copySql = `
-            SELECT book_id, copies_serial 
+            SELECT book_id, copies_serial, status
             FROM BOOK_COPIES 
             WHERE ctid = (
               SELECT ctid 
@@ -176,6 +194,16 @@ reservationRouter.post(
           }
           
           const copy = copyRes.rows[0];
+          
+          // 再次確認狀態（防止在鎖定期間狀態被改變）
+          if (copy.status !== 'Available') {
+            throw {
+              type: 'business',
+              status: 400,
+              code: 'COPY_STATUS_CHANGED',
+              message: `書籍 ${bid} 的複本狀態已改變，無法預約`,
+            };
+          }
           
           // 更新複本狀態為 Reserved
           await client.query(
