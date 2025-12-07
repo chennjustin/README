@@ -41,3 +41,4 @@ COMMENT ON COLUMN TOP_UP.admin_id IS '處理店員：外鍵參考 ADMIN 表';
 COMMENT ON COLUMN TOP_UP.amount IS '儲值金額：單次儲值金額，用於判定會員等級';
 COMMENT ON COLUMN TOP_UP.top_up_date IS '儲值日期：記錄儲值發生的日期';
 
+
