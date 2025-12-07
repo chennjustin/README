@@ -148,7 +148,6 @@ memberRouter.get(
         JOIN RESERVATION_RECORD rr ON r.reservation_id = rr.reservation_id
         JOIN BOOK b ON rr.book_id = b.book_id
         WHERE r.member_id = $1
-          AND r.status = 'Active'
         GROUP BY r.reservation_id
         ORDER BY r.reserve_date DESC, r.reservation_id DESC
       `;

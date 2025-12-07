@@ -38,7 +38,7 @@ export const adminApi = {
   addCopy(token: string, bookId: number, payload: { purchase_date?: string; purchase_price: number; book_condition?: string }) {
     return api.post(`/api/admin/books/${bookId}/copies`, payload, this.headers(token));
   },
-  borrow(token: string, payload: { member_id: number; items: { book_id: number; copies_serial: number }[] }) {
+  borrow(token: string, payload: { member_id: number; items: { book_id: number; copies_serial: number }[]; reservation_id?: number }) {
     return api.post('/api/admin/loans', payload, this.headers(token));
   },
   returnItem(

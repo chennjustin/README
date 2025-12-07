@@ -123,7 +123,7 @@ adminRouter.post(
           WHERE name = $1 AND phone = $2
         `;
         const duplicateRes = await client.query(checkDuplicateSql, [name, phone]);
-        if (duplicateRes.rowCount > 0) {
+        if (duplicateRes.rowCount && duplicateRes.rowCount > 0) {
           throw {
             type: 'business',
             status: 400,
@@ -729,7 +729,7 @@ adminRouter.post(
   requireAdmin,
   async (req: AuthedRequest, res: Response<ApiResponse<any>>, next: NextFunction) => {
     try {
-      const { member_id, items } = req.body || {};
+      const { member_id, items, reservation_id } = req.body || {};
       const adminId = req.admin!.admin_id;
 
       if (!member_id || !Array.isArray(items) || items.length === 0) {
@@ -737,6 +737,18 @@ adminRouter.post(
           success: false,
           error: { code: 'INVALID_INPUT', message: '缺少 member_id 或 items' },
         });
+      }
+
+      // Validate reservation_id if provided (only validate if it's not undefined and not null)
+      // Note: reservation_id is optional, so we only validate if it's explicitly provided
+      if (reservation_id !== undefined && reservation_id !== null) {
+        const resIdNum = Number(reservation_id);
+        if (!Number.isFinite(resIdNum) || resIdNum <= 0) {
+          return res.status(400).json({
+            success: false,
+            error: { code: 'INVALID_INPUT', message: 'reservation_id 必須為正整數' },
+          });
+        }
       }
 
       const result = await withTransaction(async (client) => {
@@ -896,6 +908,37 @@ adminRouter.post(
           RETURNING member_id, balance
         `;
         const updMemberRes = await client.query(updMemberSql, [finalPrice, member_id]);
+
+        // 如果提供了 reservation_id，更新預約狀態
+        if (reservation_id !== undefined && reservation_id !== null) {
+          const resId = Number(reservation_id);
+          // 再次驗證 reservation_id 是有效的正整數
+          if (Number.isFinite(resId) && resId > 0) {
+            // 檢查預約是否存在且狀態為 Active
+            const checkResSql = `
+              SELECT reservation_id, status, member_id
+              FROM RESERVATION
+              WHERE reservation_id = $1
+              FOR UPDATE
+            `;
+            const checkResRes = await client.query(checkResSql, [resId]);
+            
+            if (checkResRes.rowCount && checkResRes.rowCount > 0) {
+              const reservation = checkResRes.rows[0];
+              // 只要預約狀態是 Active，就更新為 Fulfilled
+              // 不強制要求會員 ID 匹配，因為管理員可能手動修改了會員 ID
+              if (reservation.status === 'Active') {
+                // 更新預約狀態為 Fulfilled 並設置 pickup_date
+                const updResSql = `
+                  UPDATE RESERVATION
+                  SET status = 'Fulfilled', pickup_date = CURRENT_DATE
+                  WHERE reservation_id = $1
+                `;
+                await client.query(updResSql, [resId]);
+              }
+            }
+          }
+        }
 
         return {
           loan_id: loanId,

@@ -10,6 +10,7 @@ interface BorrowItem extends BorrowPreview {
 
 interface ReservationData {
   fromReservation: boolean;
+  reservation_id?: number;
   member_id: number;
   member_name: string;
   books: Array<{
@@ -68,6 +69,8 @@ export function AdminBorrowPage() {
       setMemberId(String(state.member_id));
       // Clear location state to prevent re-processing on re-render
       window.history.replaceState({}, document.title);
+      // Debug: log reservation data
+      console.log('Reservation data loaded:', state);
     }
   }, [location.state]);
 
@@ -204,11 +207,28 @@ export function AdminBorrowPage() {
         copies_serial: it.copies_serial,
       }));
 
-      const res = await adminApi.borrow(token, { member_id: mid, items: apiItems });
+      // Include reservation_id if this is from a reservation
+      const borrowPayload: { member_id: number; items: any[]; reservation_id?: number } = {
+        member_id: mid,
+        items: apiItems,
+      };
+      if (reservationData?.reservation_id) {
+        borrowPayload.reservation_id = reservationData.reservation_id;
+        // Debug: log reservation_id being sent
+        console.log('Sending reservation_id:', reservationData.reservation_id);
+      } else {
+        console.log('No reservation_id to send');
+      }
+
+      const res = await adminApi.borrow(token, borrowPayload);
       setResult(res);
       // Clear the list after successful submission
       setItems([]);
       setMemberId('');
+      // Clear reservation data after successful borrow
+      if (reservationData) {
+        setReservationData(null);
+      }
     } catch (e: any) {
       const { code: errorCode, message: errorMsg } = parseError(e);
       setError(getErrorMessage(errorCode, errorMsg));

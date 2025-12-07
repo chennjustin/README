@@ -91,6 +91,7 @@ export function AdminReservationsPage() {
     navigate('/admin/loans/borrow', {
       state: {
         fromReservation: true,
+        reservation_id: reservation.reservation_id,
         member_id: reservation.member_id,
         member_name: reservation.member_name,
         books: reservation.books, // [{ book_id, name, author, publisher }]
