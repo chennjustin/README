@@ -14,6 +14,8 @@ import { AdminLoginPage } from './pages/admin/AdminLoginPage';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { AdminMembersPage } from './pages/admin/AdminMembersPage';
 import { AdminMemberDetailPage } from './pages/admin/AdminMemberDetailPage';
+import { AdminBooksPage } from './pages/admin/AdminBooksPage';
+import { AdminBookDetailPage } from './pages/admin/AdminBookDetailPage';
 import { AdminBorrowPage } from './pages/admin/AdminBorrowPage';
 import { AdminReturnPage } from './pages/admin/AdminReturnPage';
 import { AdminReservationsPage } from './pages/admin/AdminReservationsPage';
@@ -277,6 +279,19 @@ function AppShell() {
                     {!sidebarCollapsed && <span>會員管理</span>}
                   </NavLink>
                   <NavLink
+                    to="/admin/books"
+                    className={({ isActive }) =>
+                      'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
+                    }
+                    title="書籍管理"
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                    </svg>
+                    {!sidebarCollapsed && <span>書籍管理</span>}
+                  </NavLink>
+                  <NavLink
                     to="/admin/loans/borrow"
                     className={({ isActive }) =>
                       'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
@@ -441,6 +456,22 @@ function AppShell() {
               element={
                 <ProtectedAdminRoute>
                   <AdminMemberDetailPage />
+                </ProtectedAdminRoute>
+              }
+            />
+            <Route
+              path="/admin/books"
+              element={
+                <ProtectedAdminRoute>
+                  <AdminBooksPage />
+                </ProtectedAdminRoute>
+              }
+            />
+            <Route
+              path="/admin/books/:bookId"
+              element={
+                <ProtectedAdminRoute>
+                  <AdminBookDetailPage />
                 </ProtectedAdminRoute>
               }
             />

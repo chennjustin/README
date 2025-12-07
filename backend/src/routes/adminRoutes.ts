@@ -255,7 +255,7 @@ adminRouter.post(
   requireAdmin,
   async (req: AuthedRequest, res: Response<ApiResponse<any>>, next: NextFunction) => {
     try {
-      const { name, author, publisher, price, sequence_name } = req.body || {};
+      const { name, author, publisher, price, category_id, copies_count = 1, sequence_name } = req.body || {};
       if (!name || !author || typeof price !== 'number') {
         return res.status(400).json({
           success: false,
@@ -263,13 +263,85 @@ adminRouter.post(
         });
       }
 
-      const sql = `
-        INSERT INTO BOOK (sequence_name, name, author, publisher, price)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING *
-      `;
-      const result = await query(sql, [sequence_name || null, name, author, publisher || null, price]);
-      return res.status(201).json({ success: true, data: result.rows[0] });
+      if (typeof copies_count !== 'number' || copies_count < 1) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'INVALID_INPUT', message: 'copies_count 必須為大於 0 的數字' },
+        });
+      }
+
+      const result = await withTransaction(async (client) => {
+        // 1. 新增書籍到 BOOK 表
+        const insertBookSql = `
+          INSERT INTO BOOK (sequence_name, name, author, publisher, price)
+          VALUES ($1, $2, $3, $4, $5)
+          RETURNING *
+        `;
+        const bookRes = await client.query(insertBookSql, [
+          sequence_name || null,
+          name,
+          author,
+          publisher || null,
+          price,
+        ]);
+        const book = bookRes.rows[0];
+        const bookId = book.book_id;
+
+        // 2. 如果提供 category_id，新增到 BOOK_CATEGORY 表
+        if (category_id !== undefined && category_id !== null) {
+          const insertCategorySql = `
+            INSERT INTO BOOK_CATEGORY (book_id, category_id)
+            VALUES ($1, $2)
+            ON CONFLICT DO NOTHING
+          `;
+          await client.query(insertCategorySql, [bookId, category_id]);
+        }
+
+        // 3. 取得 Good 書況的折扣係數
+        const discountSql = `
+          SELECT discount_factor
+          FROM CONDITION_DISCOUNT
+          WHERE book_condition = 'Good'
+        `;
+        const discountRes = await client.query(discountSql);
+        if (discountRes.rowCount === 0) {
+          throw {
+            type: 'business',
+            status: 500,
+            code: 'CONDITION_NOT_FOUND',
+            message: '找不到 Good 書況的折扣設定',
+          };
+        }
+        const discount = Number(discountRes.rows[0].discount_factor);
+        const rentalPrice = Math.round(price * discount);
+
+        // 4. 新增複本到 BOOK_COPIES 表
+        const purchaseDate = new Date();
+        const copies = [];
+        for (let i = 1; i <= copies_count; i++) {
+          const insertCopySql = `
+            INSERT INTO BOOK_COPIES (
+              book_id, copies_serial, status, purchase_date, purchase_price, book_condition, rental_price
+            ) VALUES ($1, $2, 'Available', $3, $4, 'Good', $5)
+            RETURNING *
+          `;
+          const copyRes = await client.query(insertCopySql, [
+            bookId,
+            i,
+            purchaseDate,
+            price, // purchase_price = price (租金定價)
+            rentalPrice,
+          ]);
+          copies.push(copyRes.rows[0]);
+        }
+
+        return {
+          book,
+          copies,
+        };
+      });
+
+      return res.status(201).json({ success: true, data: result });
     } catch (err) {
       next(err);
     }
@@ -372,6 +444,186 @@ adminRouter.delete(
       }
 
       return res.json({ success: true, data: { book_id: bookId } });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// 搜尋書籍 API
+adminRouter.get(
+  '/books/search',
+  requireAdmin,
+  async (req: AuthedRequest, res: Response<ApiResponse<any>>, next: NextFunction) => {
+    try {
+      const bookIdParam = req.query.bookId as string | undefined;
+      const name = req.query.name as string | undefined;
+      const categoryIdParam = req.query.categoryId as string | undefined;
+      const status = req.query.status as string | undefined;
+
+      const params: any[] = [];
+      const conditions: string[] = [];
+
+      if (bookIdParam) {
+        const bookId = Number(bookIdParam);
+        if (Number.isFinite(bookId)) {
+          params.push(bookId);
+          conditions.push(`b.book_id = $${params.length}`);
+        }
+      }
+
+      if (name) {
+        params.push(`%${name}%`);
+        conditions.push(`b.name ILIKE $${params.length}`);
+      }
+
+      if (categoryIdParam) {
+        const categoryId = Number(categoryIdParam);
+        if (Number.isFinite(categoryId)) {
+          params.push(categoryId);
+          conditions.push(`EXISTS (
+            SELECT 1 FROM BOOK_CATEGORY bc2
+            WHERE bc2.book_id = b.book_id AND bc2.category_id = $${params.length}
+          )`);
+        }
+      }
+
+      if (conditions.length === 0 && !categoryIdParam) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'INVALID_INPUT', message: '請提供 bookId、name 或 categoryId 參數' },
+        });
+      }
+
+      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+      // Build SQL with optional status filter
+      let sql: string;
+      if (status && ['Available', 'Borrowed', 'Lost'].includes(status)) {
+        // If status filter is provided, only show books with copies matching that status
+        const statusParamIndex = params.length + 1;
+        sql = `
+          SELECT 
+            b.book_id,
+            b.name,
+            b.author,
+            b.publisher,
+            b.price,
+            COALESCE(
+              json_agg(
+                jsonb_build_object(
+                  'copies_serial', bc.copies_serial,
+                  'status', bc.status,
+                  'book_condition', bc.book_condition,
+                  'purchase_date', bc.purchase_date,
+                  'purchase_price', bc.purchase_price,
+                  'rental_price', bc.rental_price
+                )
+                ORDER BY bc.copies_serial
+              ) FILTER (WHERE bc.copies_serial IS NOT NULL),
+              '[]'::json
+            ) AS copies
+          FROM BOOK b
+          INNER JOIN BOOK_COPIES bc ON b.book_id = bc.book_id AND bc.status = $${statusParamIndex}
+          ${whereClause}
+          GROUP BY b.book_id, b.name, b.author, b.publisher, b.price
+          ORDER BY b.book_id
+        `;
+        params.push(status);
+      } else {
+        // No status filter, show all copies
+        sql = `
+          SELECT 
+            b.book_id,
+            b.name,
+            b.author,
+            b.publisher,
+            b.price,
+            COALESCE(
+              json_agg(
+                jsonb_build_object(
+                  'copies_serial', bc.copies_serial,
+                  'status', bc.status,
+                  'book_condition', bc.book_condition,
+                  'purchase_date', bc.purchase_date,
+                  'purchase_price', bc.purchase_price,
+                  'rental_price', bc.rental_price
+                )
+                ORDER BY bc.copies_serial
+              ) FILTER (WHERE bc.copies_serial IS NOT NULL),
+              '[]'::json
+            ) AS copies
+          FROM BOOK b
+          LEFT JOIN BOOK_COPIES bc ON b.book_id = bc.book_id
+          ${whereClause}
+          GROUP BY b.book_id, b.name, b.author, b.publisher, b.price
+          ORDER BY b.book_id
+        `;
+      }
+
+      const result = await query(sql, params);
+      return res.json({ success: true, data: result.rows });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// 列出所有書籍 API（分頁）
+adminRouter.get(
+  '/books',
+  requireAdmin,
+  async (req: AuthedRequest, res: Response<ApiResponse<any>>, next: NextFunction) => {
+    try {
+      const page = Number(req.query.page) || 1;
+      const limit = Number(req.query.limit) || 100;
+      const offset = (page - 1) * limit;
+
+      if (page < 1 || limit < 1) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'INVALID_INPUT', message: 'page 和 limit 必須大於 0' },
+        });
+      }
+
+      // 取得總數
+      const countSql = `SELECT COUNT(DISTINCT b.book_id) AS total FROM BOOK b`;
+      const countResult = await query(countSql, []);
+      const total = Number(countResult.rows[0].total);
+      const totalPages = Math.ceil(total / limit);
+
+      // 取得書籍列表（含複本統計）
+      const sql = `
+        SELECT 
+          b.book_id,
+          b.name,
+          b.author,
+          b.publisher,
+          b.price,
+          COUNT(bc.copies_serial) AS total_copies,
+          COUNT(*) FILTER (WHERE bc.status = 'Available') AS available_count,
+          COUNT(*) FILTER (WHERE bc.status = 'Borrowed') AS borrowed_count,
+          COUNT(*) FILTER (WHERE bc.status = 'Lost') AS lost_count
+        FROM BOOK b
+        LEFT JOIN BOOK_COPIES bc ON b.book_id = bc.book_id
+        GROUP BY b.book_id, b.name, b.author, b.publisher, b.price
+        ORDER BY b.book_id
+        LIMIT $1 OFFSET $2
+      `;
+
+      const result = await query(sql, [limit, offset]);
+      return res.json({
+        success: true,
+        data: {
+          books: result.rows,
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages,
+          },
+        },
+      });
     } catch (err) {
       next(err);
     }
@@ -587,43 +839,110 @@ adminRouter.patch(
         });
       }
 
-      const fields: string[] = [];
-      const params: any[] = [];
+      const result = await withTransaction(async (client) => {
+        // 如果更新 book_condition，需要重新計算 rental_price
+        if (book_condition !== undefined) {
+          // 取得新的書況折扣係數
+          const discountSql = `
+            SELECT discount_factor
+            FROM CONDITION_DISCOUNT
+            WHERE book_condition = $1
+          `;
+          const discountRes = await client.query(discountSql, [book_condition]);
+          if (discountRes.rowCount === 0) {
+            throw {
+              type: 'business',
+              status: 400,
+              code: 'INVALID_CONDITION',
+              message: '無效的書況',
+            };
+          }
 
-      if (status !== undefined) {
-        params.push(status);
-        fields.push(`status = $${params.length}`);
-      }
-      if (book_condition !== undefined) {
-        params.push(book_condition);
-        fields.push(`book_condition = $${params.length}`);
-      }
+          const discount = Number(discountRes.rows[0].discount_factor);
 
-      if (fields.length === 0) {
-        return res.status(400).json({
-          success: false,
-          error: { code: 'NO_FIELDS', message: '沒有要更新的欄位' },
-        });
-      }
+          // 取得書籍的 price
+          const priceSql = `SELECT price FROM BOOK WHERE book_id = $1`;
+          const priceRes = await client.query(priceSql, [bookId]);
+          if (priceRes.rowCount === 0) {
+            throw {
+              type: 'business',
+              status: 404,
+              code: 'BOOK_NOT_FOUND',
+              message: '找不到書籍',
+            };
+          }
 
-      params.push(bookId, copiesSerial);
-      const sql = `
-        UPDATE BOOK_COPIES
-        SET ${fields.join(', ')}
-        WHERE book_id = $${params.length - 1}
-          AND copies_serial = $${params.length}
-        RETURNING *
-      `;
+          const bookPrice = Number(priceRes.rows[0].price);
+          const newRentalPrice = Math.round(bookPrice * discount);
 
-      const result = await query(sql, params);
-      if (result.rowCount === 0) {
-        return res.status(404).json({
-          success: false,
-          error: { code: 'COPY_NOT_FOUND', message: '找不到書籍複本' },
-        });
-      }
+          // 更新 book_condition 和 rental_price
+          const fields: string[] = [];
+          const params: any[] = [];
 
-      return res.json({ success: true, data: result.rows[0] });
+          fields.push(`book_condition = $${params.length + 1}`);
+          params.push(book_condition);
+          fields.push(`rental_price = $${params.length + 1}`);
+          params.push(newRentalPrice);
+
+          if (status !== undefined) {
+            fields.push(`status = $${params.length + 1}`);
+            params.push(status);
+          }
+
+          params.push(bookId, copiesSerial);
+          const updateSql = `
+            UPDATE BOOK_COPIES
+            SET ${fields.join(', ')}
+            WHERE book_id = $${params.length - 1}
+              AND copies_serial = $${params.length}
+            RETURNING *
+          `;
+
+          const updateRes = await client.query(updateSql, params);
+          if (updateRes.rowCount === 0) {
+            throw {
+              type: 'business',
+              status: 404,
+              code: 'COPY_NOT_FOUND',
+              message: '找不到書籍複本',
+            };
+          }
+
+          return updateRes.rows[0];
+        } else {
+          // 只更新 status
+          if (status === undefined) {
+            throw {
+              type: 'business',
+              status: 400,
+              code: 'NO_FIELDS',
+              message: '沒有要更新的欄位',
+            };
+          }
+
+          const updateSql = `
+            UPDATE BOOK_COPIES
+            SET status = $1
+            WHERE book_id = $2
+              AND copies_serial = $3
+            RETURNING *
+          `;
+
+          const updateRes = await client.query(updateSql, [status, bookId, copiesSerial]);
+          if (updateRes.rowCount === 0) {
+            throw {
+              type: 'business',
+              status: 404,
+              code: 'COPY_NOT_FOUND',
+              message: '找不到書籍複本',
+            };
+          }
+
+          return updateRes.rows[0];
+        }
+      });
+
+      return res.json({ success: true, data: result });
     } catch (err) {
       next(err);
     }
@@ -1128,13 +1447,46 @@ adminRouter.post(
             }
           }
 
+          // Calculate new rental_price based on new condition
+          const discountSql = `
+            SELECT discount_factor
+            FROM CONDITION_DISCOUNT
+            WHERE book_condition = $1
+          `;
+          const discountRes = await client.query(discountSql, [newCondition]);
+          if (discountRes.rowCount === 0) {
+            throw {
+              type: 'business',
+              status: 400,
+              code: 'INVALID_CONDITION',
+              message: '無效的書況',
+            };
+          }
+          const discount = Number(discountRes.rows[0].discount_factor);
+
+          // Get book price
+          const priceSql = `SELECT price FROM BOOK WHERE book_id = $1`;
+          const priceRes = await client.query(priceSql, [bookId]);
+          if (priceRes.rowCount === 0) {
+            throw {
+              type: 'business',
+              status: 404,
+              code: 'BOOK_NOT_FOUND',
+              message: '找不到書籍',
+            };
+          }
+          const bookPrice = Number(priceRes.rows[0].price);
+          const newRentalPrice = Math.round(bookPrice * discount);
+
+          // Update book condition, status, and rental_price
           const updCopySql = `
             UPDATE BOOK_COPIES
             SET book_condition = $1,
-                status = 'Available'
-            WHERE book_id = $2 AND copies_serial = $3
+                status = 'Available',
+                rental_price = $2
+            WHERE book_id = $3 AND copies_serial = $4
           `;
-          await client.query(updCopySql, [newCondition, bookId, copiesSerial]);
+          await client.query(updCopySql, [newCondition, newRentalPrice, bookId, copiesSerial]);
         } else {
           // 沒變化，單純歸還
           const updCopySql = `
@@ -1474,6 +1826,17 @@ adminRouter.get(
     try {
       const memberId = req.query.memberId as string | undefined;
       const name = req.query.name as string | undefined;
+      const page = Number(req.query.page) || 1;
+      const limit = Number(req.query.limit) || 100;
+
+      if (page < 1 || limit < 1) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'INVALID_INPUT', message: 'page 和 limit 必須大於 0' },
+        });
+      }
+
+      const offset = (page - 1) * limit;
 
       const params: any[] = [];
       const conditions: string[] = [];
@@ -1493,6 +1856,17 @@ adminRouter.get(
 
       const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
+      // Get total count
+      const countSql = `
+        SELECT COUNT(*) AS total
+        FROM MEMBER m
+        ${whereClause}
+      `;
+      const countResult = await query(countSql, params);
+      const total = Number(countResult.rows[0].total);
+      const totalPages = Math.ceil(total / limit);
+
+      // Get paginated results
       const sql = `
         SELECT 
           m.member_id,
@@ -1505,11 +1879,22 @@ adminRouter.get(
         FROM MEMBER m
         ${whereClause}
         ORDER BY m.member_id ASC
-        LIMIT 100
+        LIMIT $${params.length + 1} OFFSET $${params.length + 2}
       `;
 
-      const result = await query(sql, params);
-      return res.json({ success: true, data: result.rows });
+      const result = await query(sql, [...params, limit, offset]);
+      return res.json({
+        success: true,
+        data: {
+          members: result.rows,
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages,
+          },
+        },
+      });
     } catch (err) {
       next(err);
     }
@@ -2137,13 +2522,36 @@ async function processReturnItem(
         }
       }
 
+      // Calculate new rental_price based on new condition
+      const discountSql = `
+        SELECT discount_factor
+        FROM CONDITION_DISCOUNT
+        WHERE book_condition = $1
+      `;
+      const discountRes = await client.query(discountSql, [newCondition]);
+      if (discountRes.rowCount === 0) {
+        return { success: false, error: '無效的書況' };
+      }
+      const discount = Number(discountRes.rows[0].discount_factor);
+
+      // Get book price
+      const priceSql = `SELECT price FROM BOOK WHERE book_id = $1`;
+      const priceRes = await client.query(priceSql, [bookId]);
+      if (priceRes.rowCount === 0) {
+        return { success: false, error: '找不到書籍' };
+      }
+      const bookPrice = Number(priceRes.rows[0].price);
+      const newRentalPrice = Math.round(bookPrice * discount);
+
+      // Update book condition, status, and rental_price
       const updCopySql = `
         UPDATE BOOK_COPIES
         SET book_condition = $1,
-            status = 'Available'
-        WHERE book_id = $2 AND copies_serial = $3
+            status = 'Available',
+            rental_price = $2
+        WHERE book_id = $3 AND copies_serial = $4
       `;
-      await client.query(updCopySql, [newCondition, bookId, copiesSerial]);
+      await client.query(updCopySql, [newCondition, newRentalPrice, bookId, copiesSerial]);
     } else {
       // No change, just return
       const updCopySql = `
