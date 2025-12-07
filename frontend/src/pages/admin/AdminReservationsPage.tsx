@@ -30,7 +30,12 @@ export function AdminReservationsPage() {
       const res = await adminApi.getReservations(token, status, activeSearchParams);
       setData(res as any[]);
     } catch (e: any) {
-      setError(e.message);
+      // Handle authentication errors specially
+      if (e.name === 'AuthenticationError' || e.message?.includes('UNAUTHORIZED')) {
+        setError('登入已過期，請重新登入');
+      } else {
+        setError(e.message);
+      }
     } finally {
       setLoading(false);
     }

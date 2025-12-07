@@ -51,7 +51,7 @@ export function AdminBorrowPage() {
     const errorMap: Record<string, string> = {
       MEMBER_NOT_FOUND: '找不到會員',
       COPY_NOT_FOUND: '找不到書籍複本',
-      MEMBER_INACTIVE: '會員狀態不可借書',
+      MEMBER_INACTIVE: '會員狀態不可借書，請先將會員狀態設為 Active',
       COPY_NOT_AVAILABLE: '複本不可借出',
       INVALID_INPUT: '輸入格式錯誤',
       HTTP_ERROR: defaultMessage,

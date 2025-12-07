@@ -1564,6 +1564,17 @@ adminRouter.post(
           };
         }
 
+        const member = memberCheckRes.rows[0];
+        // Check if member status is active
+        if (member.status !== 'Active') {
+          throw {
+            type: 'business',
+            status: 400,
+            code: 'MEMBER_INACTIVE',
+            message: '會員狀態不可儲值',
+          };
+        }
+
         // Insert TOP_UP record
         const topUpSql = `
           INSERT INTO TOP_UP (member_id, admin_id, amount, top_up_date)
