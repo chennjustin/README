@@ -18,6 +18,15 @@ reservationRouter.post(
         });
       }
 
+      // 檢查 book_ids 中是否有重複
+      const uniqueBookIds = [...new Set(book_ids)];
+      if (uniqueBookIds.length !== book_ids.length) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'DUPLICATE_BOOK_IDS', message: 'book_ids 陣列中不能有重複的 book_id' },
+        });
+      }
+
       const result = await withTransaction(async (client) => {
         // 會員與等級
         const memberSql = `
@@ -118,7 +127,65 @@ reservationRouter.post(
         const resInsertRes = await client.query(insertResSql, [member_id]);
         const reservation = resInsertRes.rows[0];
 
+        // 對每個 book_id，檢查是否已經有 Active 預約
         for (const bid of book_ids) {
+          const existingReservationSql = `
+            SELECT COUNT(*) > 0 AS has_existing
+            FROM RESERVATION r
+            JOIN RESERVATION_RECORD rr ON r.reservation_id = rr.reservation_id
+            WHERE r.member_id = $1
+              AND rr.book_id = $2
+              AND r.status = 'Active'
+          `;
+          const existingRes = await client.query(existingReservationSql, [member_id, bid]);
+          if (existingRes.rows[0].has_existing) {
+            throw {
+              type: 'business',
+              status: 400,
+              code: 'DUPLICATE_RESERVATION',
+              message: `您已經有該書籍 ${bid} 的 Active 預約，一個會員只能對同一本書進行一筆預約`,
+            };
+          }
+        }
+
+        // 對每個 book_id，自動選擇並鎖定一個 available 複本
+        const reservedCopies: { book_id: number; copies_serial: number }[] = [];
+        for (const bid of book_ids) {
+          // 查詢並鎖定 available 複本
+          const copySql = `
+            SELECT book_id, copies_serial 
+            FROM BOOK_COPIES 
+            WHERE book_id = $1 AND status = 'Available' 
+            FOR UPDATE 
+            LIMIT 1
+          `;
+          const copyRes = await client.query(copySql, [bid]);
+          
+          if (copyRes.rowCount === 0) {
+            throw {
+              type: 'business',
+              status: 400,
+              code: 'NO_AVAILABLE_COPY',
+              message: `書籍 ${bid} 無可預約複本`,
+            };
+          }
+          
+          const copy = copyRes.rows[0];
+          
+          // 更新複本狀態為 Reserved
+          await client.query(
+            `UPDATE BOOK_COPIES 
+             SET status = 'Reserved' 
+             WHERE book_id = $1 AND copies_serial = $2`,
+            [copy.book_id, copy.copies_serial]
+          );
+          
+          reservedCopies.push({
+            book_id: copy.book_id,
+            copies_serial: copy.copies_serial,
+          });
+          
+          // 建立 RESERVATION_RECORD（只記錄 book_id）
           await client.query(
             'INSERT INTO RESERVATION_RECORD (reservation_id, book_id) VALUES ($1, $2)',
             [reservation.reservation_id, bid]
@@ -128,6 +195,7 @@ reservationRouter.post(
         return {
           reservation,
           book_ids,
+          reserved_copies: reservedCopies,
         };
       });
 

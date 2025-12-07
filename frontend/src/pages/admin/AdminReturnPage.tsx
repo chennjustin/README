@@ -25,7 +25,7 @@ export function AdminReturnPage() {
   const [returnList, setReturnList] = useState<ReturnListItem[]>([]);
   const [calculatingFines, setCalculatingFines] = useState(false);
   const [returning, setReturning] = useState(false);
-  const [returnResult, setReturnResult] = useState<{ success_count: number; fail_count: number } | null>(null);
+  const [returnResult, setReturnResult] = useState<{ success_count: number; fail_count: number; results?: any[] } | null>(null);
   const [returnError, setReturnError] = useState<string | null>(null);
   const [expandedLoans, setExpandedLoans] = useState<Set<number>>(new Set());
 
@@ -230,6 +230,7 @@ export function AdminReturnPage() {
       setReturnResult({
         success_count: res.success_count,
         fail_count: res.fail_count,
+        results: res.results,
       });
       // Remove successfully returned items from list
       const successKeys = new Set(
@@ -544,10 +545,23 @@ export function AdminReturnPage() {
             padding: '1rem',
             backgroundColor: returnResult.fail_count === 0 ? '#e8f5e9' : '#fff3e0',
             borderRadius: '4px',
-            fontWeight: '600',
           }}
         >
-          本次還書成功 {returnResult.success_count} 筆、失敗 {returnResult.fail_count} 筆
+          <div style={{ fontWeight: '600', marginBottom: returnResult.fail_count > 0 ? '0.5rem' : '0' }}>
+            本次還書成功 {returnResult.success_count} 筆、失敗 {returnResult.fail_count} 筆
+          </div>
+          {returnResult.fail_count > 0 && returnResult.results && (
+            <div style={{ marginTop: '0.5rem' }}>
+              <div style={{ fontWeight: '600', marginBottom: '0.25rem' }}>失敗詳情：</div>
+              {returnResult.results
+                .filter((r) => !r.success)
+                .map((r, idx) => (
+                  <div key={idx} style={{ marginTop: '0.25rem', fontSize: '0.9rem', color: '#d32f2f' }}>
+                    Loan ID {r.loan_id}, Book ID {r.book_id}, Copies {r.copies_serial}: {r.error || '未知錯誤'}
+                  </div>
+                ))}
+            </div>
+          )}
         </div>
       )}
 

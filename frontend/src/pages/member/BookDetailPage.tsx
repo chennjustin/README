@@ -4,7 +4,7 @@ import { booksApi } from '../../api/booksApi';
 import { memberApi } from '../../api/memberApi';
 import { useMember } from '../../context/MemberContext';
 import { BookDetail, MemberProfile } from '../../types';
-import { ReservationModal } from '../../components/ReservationModal';
+import { useReservationCart } from '../../context/ReservationCartContext';
 
 export function BookDetailPage() {
   const { bookId } = useParams();
@@ -14,7 +14,7 @@ export function BookDetailPage() {
   const [memberProfile, setMemberProfile] = useState<MemberProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [showReservationModal, setShowReservationModal] = useState(false);
+  const { addItem, hasItem } = useReservationCart();
 
   useEffect(() => {
     if (!bookId) return;
@@ -119,13 +119,48 @@ export function BookDetailPage() {
           <div className="spacer-md" />
           {memberId && memberProfile && memberProfile.status === 'Active' && (
             <div className="book-detail-actions">
-              <button
-                className="btn btn-primary"
-                onClick={() => setShowReservationModal(true)}
-                disabled={!book || book.copies.every((c) => c.available_count === 0)}
-              >
-                預約書籍
-              </button>
+              {hasItem(book.book_id) ? (
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                  <span className="text-muted">已加入預約購物車</span>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => navigate('/member/reservations/cart')}
+                  >
+                    前往購物車
+                  </button>
+                </div>
+              ) : (
+                <button
+                  className="btn btn-primary"
+                  onClick={() => {
+                    // 計算總可借數量（所有書況的 available_count 總和）
+                    const totalAvailable = book.copies.reduce((sum, c) => sum + (c.available_count || 0), 0);
+                    
+                    if (totalAvailable <= 0) {
+                      setError('該書籍目前無可借複本，無法加入預約購物車');
+                      return;
+                    }
+                    
+                    try {
+                      const estimatedRental = book.copies.length > 0 
+                        ? Math.min(...book.copies.map((c) => Math.round(c.discounted_rental_price))) 
+                        : book.price;
+                      addItem({
+                        book_id: book.book_id,
+                        book_name: book.name,
+                        estimated_rental: estimatedRental,
+                        available_count: totalAvailable,
+                      });
+                      setError(null);
+                    } catch (e: any) {
+                      setError(e.message);
+                    }
+                  }}
+                  disabled={!book || book.copies.every((c) => c.available_count === 0)}
+                >
+                  加入預約購物車
+                </button>
+              )}
             </div>
           )}
           {memberId && memberProfile && memberProfile.status !== 'Active' && (
@@ -139,13 +174,48 @@ export function BookDetailPage() {
           )}
           {memberId && !memberProfile && (
             <div className="book-detail-actions">
-              <button
-                className="btn btn-primary"
-                onClick={() => setShowReservationModal(true)}
-                disabled={!book || book.copies.every((c) => c.available_count === 0)}
-              >
-                預約書籍
-              </button>
+              {hasItem(book.book_id) ? (
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                  <span className="text-muted">已加入預約購物車</span>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => navigate('/member/reservations/cart')}
+                  >
+                    前往購物車
+                  </button>
+                </div>
+              ) : (
+                <button
+                  className="btn btn-primary"
+                  onClick={() => {
+                    // 計算總可借數量（所有書況的 available_count 總和）
+                    const totalAvailable = book.copies.reduce((sum, c) => sum + (c.available_count || 0), 0);
+                    
+                    if (totalAvailable <= 0) {
+                      setError('該書籍目前無可借複本，無法加入預約購物車');
+                      return;
+                    }
+                    
+                    try {
+                      const estimatedRental = book.copies.length > 0 
+                        ? Math.min(...book.copies.map((c) => Math.round(c.discounted_rental_price))) 
+                        : book.price;
+                      addItem({
+                        book_id: book.book_id,
+                        book_name: book.name,
+                        estimated_rental: estimatedRental,
+                        available_count: totalAvailable,
+                      });
+                      setError(null);
+                    } catch (e: any) {
+                      setError(e.message);
+                    }
+                  }}
+                  disabled={!book || book.copies.every((c) => c.available_count === 0)}
+                >
+                  加入預約購物車
+                </button>
+              )}
             </div>
           )}
           {!memberId && (
@@ -154,20 +224,6 @@ export function BookDetailPage() {
             </div>
           )}
         </>
-      )}
-      {book && memberId && (
-        <ReservationModal
-          isOpen={showReservationModal}
-          onClose={() => setShowReservationModal(false)}
-          onConfirm={() => {
-            setShowReservationModal(false);
-            navigate('/member/reservations');
-          }}
-          bookName={book.name}
-          bookId={book.book_id}
-          estimatedRental={book.copies.length > 0 ? Math.min(...book.copies.map((c) => Math.round(c.discounted_rental_price))) : book.price}
-          memberId={memberId}
-        />
       )}
     </div>
   );

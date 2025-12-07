@@ -87,7 +87,8 @@ export function AdminBorrowPage() {
     setLoadingReservationCopies((prev) => ({ ...prev, [bookId]: true }));
 
     try {
-      const result = await adminApi.getAvailableCopies(token, bookId);
+      const memberId = memberDetail?.member_id;
+      const result = await adminApi.getAvailableCopies(token, bookId, memberId);
       setReservationAvailableCopies((prev) => ({
         ...prev,
         [bookId]: result.copies || [],
@@ -189,7 +190,8 @@ export function AdminBorrowPage() {
     setError(null);
 
     try {
-      const result = await adminApi.getAvailableCopies(token, bookId);
+      const memberId = memberDetail?.member_id;
+      const result = await adminApi.getAvailableCopies(token, bookId, memberId);
       setAvailableCopies(result.copies || []);
       setSelectedBookName(result.book_name);
       if (result.copies.length === 0) {

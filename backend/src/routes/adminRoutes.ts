@@ -956,6 +956,7 @@ adminRouter.get(
   async (req: AuthedRequest, res: Response<ApiResponse<any>>, next: NextFunction) => {
     try {
       const bookId = Number(req.params.bookId);
+      const memberId = req.query.member_id ? Number(req.query.member_id) : null;
 
       if (!Number.isFinite(bookId)) {
         return res.status(400).json({
@@ -964,20 +965,72 @@ adminRouter.get(
         });
       }
 
-      // Query available copies for the book
-      const sql = `
-        SELECT 
-          bc.copies_serial,
-          bc.status,
-          bc.book_condition,
-          bc.rental_price,
-          b.name AS book_name
-        FROM BOOK_COPIES bc
-        JOIN BOOK b ON bc.book_id = b.book_id
-        WHERE bc.book_id = $1 AND bc.status = 'Available'
-        ORDER BY bc.copies_serial ASC
-      `;
-      const result = await query(sql, [bookId]);
+      let sql: string;
+      let params: any[];
+
+      // 如果有 member_id，檢查該會員是否有 Active 預約
+      if (memberId && Number.isFinite(memberId)) {
+        // 檢查是否有預約
+        const hasReservationSql = `
+          SELECT COUNT(*) > 0 AS has_reservation
+          FROM RESERVATION r
+          JOIN RESERVATION_RECORD rr ON r.reservation_id = rr.reservation_id
+          WHERE r.member_id = $1
+            AND rr.book_id = $2
+            AND r.status = 'Active'
+        `;
+        const hasReservationRes = await query(hasReservationSql, [memberId, bookId]);
+        const hasReservation = hasReservationRes.rows[0].has_reservation;
+
+        if (hasReservation) {
+          // 有預約：返回 Available 和 Reserved 的複本
+          sql = `
+            SELECT 
+              bc.copies_serial,
+              bc.status,
+              bc.book_condition,
+              bc.rental_price,
+              b.name AS book_name
+            FROM BOOK_COPIES bc
+            JOIN BOOK b ON bc.book_id = b.book_id
+            WHERE bc.book_id = $1 AND bc.status IN ('Available', 'Reserved')
+            ORDER BY bc.copies_serial ASC
+          `;
+          params = [bookId];
+        } else {
+          // 沒有預約：只返回 Available 的複本
+          sql = `
+            SELECT 
+              bc.copies_serial,
+              bc.status,
+              bc.book_condition,
+              bc.rental_price,
+              b.name AS book_name
+            FROM BOOK_COPIES bc
+            JOIN BOOK b ON bc.book_id = b.book_id
+            WHERE bc.book_id = $1 AND bc.status = 'Available'
+            ORDER BY bc.copies_serial ASC
+          `;
+          params = [bookId];
+        }
+      } else {
+        // 沒有 member_id：只返回 Available 的複本
+        sql = `
+          SELECT 
+            bc.copies_serial,
+            bc.status,
+            bc.book_condition,
+            bc.rental_price,
+            b.name AS book_name
+          FROM BOOK_COPIES bc
+          JOIN BOOK b ON bc.book_id = b.book_id
+          WHERE bc.book_id = $1 AND bc.status = 'Available'
+          ORDER BY bc.copies_serial ASC
+        `;
+        params = [bookId];
+      }
+
+      const result = await query(sql, params);
 
       return res.json({
         success: true,
@@ -1174,10 +1227,25 @@ adminRouter.post(
           book_id: number;
           copies_serial: number;
           rental_price: number;
+          was_reserved: boolean; // 記錄原本是否為 Reserved
         }[] = [];
 
         for (const it of items) {
           const { book_id, copies_serial } = it;
+          
+          // 1. 檢查該會員對該 book_id 是否有 Active 預約
+          const hasReservationSql = `
+            SELECT COUNT(*) > 0 AS has_reservation
+            FROM RESERVATION r
+            JOIN RESERVATION_RECORD rr ON r.reservation_id = rr.reservation_id
+            WHERE r.member_id = $1
+              AND rr.book_id = $2
+              AND r.status = 'Active'
+          `;
+          const hasReservationRes = await client.query(hasReservationSql, [member_id, book_id]);
+          const hasReservation = hasReservationRes.rows[0].has_reservation;
+          
+          // 2. 查詢複本狀態並鎖定
           const copySql = `
             SELECT book_id, copies_serial, status, rental_price
             FROM BOOK_COPIES
@@ -1194,7 +1262,13 @@ adminRouter.post(
             };
           }
           const copy = copyRes.rows[0];
-          if (copy.status !== 'Available') {
+          
+          // 3. 檢查規則
+          if (copy.status === 'Available') {
+            // 可借（所有人）
+          } else if (copy.status === 'Reserved' && hasReservation) {
+            // 可借（只有有預約的會員）
+          } else {
             throw {
               type: 'business',
               status: 400,
@@ -1202,10 +1276,12 @@ adminRouter.post(
               message: `複本不可借出 book_id=${book_id}, copies_serial=${copies_serial}`,
             };
           }
+          
           rentals.push({
             book_id,
             copies_serial,
             rental_price: Number(copy.rental_price),
+            was_reserved: copy.status === 'Reserved',
           });
         }
 
@@ -1241,7 +1317,10 @@ adminRouter.post(
         const loanId = loanRes.rows[0].loan_id;
 
         // 建立 LOAN_RECORD 並更新 BOOK_COPIES.status
-        for (const item of perItemFees) {
+        for (let i = 0; i < perItemFees.length; i++) {
+          const item = perItemFees[i];
+          const rental = rentals[i];
+          
           const recordSql = `
             INSERT INTO LOAN_RECORD (
               loan_id, book_id, copies_serial, date_out, due_date, rental_fee, renew_cnt
@@ -1255,12 +1334,28 @@ adminRouter.post(
             item.rental_fee,
           ]);
 
+          // 更新複本狀態為 Borrowed
           const updCopySql = `
             UPDATE BOOK_COPIES
             SET status = 'Borrowed'
             WHERE book_id = $1 AND copies_serial = $2
           `;
           await client.query(updCopySql, [item.book_id, item.copies_serial]);
+          
+          // 若借的是預約的複本，更新對應的 RESERVATION 為 Fulfilled
+          if (rental.was_reserved) {
+            await client.query(
+              `UPDATE RESERVATION r
+               SET status = 'Fulfilled', pickup_date = CURRENT_DATE
+               FROM RESERVATION_RECORD rr
+               WHERE r.reservation_id = rr.reservation_id
+                 AND rr.book_id = $1
+                 AND r.member_id = $2
+                 AND r.status = 'Active'
+               LIMIT 1`,
+              [item.book_id, member_id]
+            );
+          }
         }
 
         // 扣款
@@ -1326,7 +1421,7 @@ adminRouter.post(
       const loanId = Number(req.params.loanId);
       const bookId = Number(req.params.bookId);
       const copiesSerial = Number(req.params.copiesSerial);
-      const { final_condition, lost = false, immediateCharge = false } = req.body || {};
+      const { final_condition, lost = false } = req.body || {};
 
       if (!Number.isFinite(loanId) || !Number.isFinite(bookId) || !Number.isFinite(copiesSerial)) {
         return res.status(400).json({
@@ -1417,6 +1512,8 @@ adminRouter.post(
           const insertOverdueSql = `
             INSERT INTO ADD_FEE (loan_id, book_id, copies_serial, type, amount, date)
             VALUES ($1, $2, $3, 'overdue', $4, $5)
+            ON CONFLICT (loan_id, book_id, copies_serial, type) 
+            DO UPDATE SET amount = EXCLUDED.amount, date = EXCLUDED.date
           `;
           await client.query(insertOverdueSql, [loanId, bookId, copiesSerial, amount, today]);
         }
@@ -1441,6 +1538,8 @@ adminRouter.post(
           const insertLostSql = `
             INSERT INTO ADD_FEE (loan_id, book_id, copies_serial, type, amount, date)
             VALUES ($1, $2, $3, 'lost', $4, $5)
+            ON CONFLICT (loan_id, book_id, copies_serial, type) 
+            DO UPDATE SET amount = EXCLUDED.amount, date = EXCLUDED.date
           `;
           await client.query(insertLostSql, [loanId, bookId, copiesSerial, amount, today]);
 
@@ -1479,6 +1578,8 @@ adminRouter.post(
               const insertDamageSql = `
                 INSERT INTO ADD_FEE (loan_id, book_id, copies_serial, type, amount, date)
                 VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT (loan_id, book_id, copies_serial, type) 
+                DO UPDATE SET amount = EXCLUDED.amount, date = EXCLUDED.date
               `;
               await client.query(insertDamageSql, [
                 loanId,
@@ -1541,8 +1642,19 @@ adminRouter.post(
           await client.query(updCopySql, [bookId, copiesSerial]);
         }
 
+        // 自動從會員餘額扣除額外費用
         let memberAfter: any = { member_id: rec.member_id, balance: rec.balance };
-        if (immediateCharge && totalAddFee > 0) {
+        if (totalAddFee > 0) {
+          // 檢查餘額是否足夠
+          if (rec.balance < totalAddFee) {
+            throw {
+              type: 'business',
+              status: 400,
+              code: 'INSUFFICIENT_BALANCE',
+              message: `會員餘額不足，無法支付額外費用 ${totalAddFee} 元（目前餘額：${rec.balance} 元）`,
+            };
+          }
+          
           const updMemberSql = `
             UPDATE MEMBER
             SET balance = balance - $1
@@ -1673,6 +1785,8 @@ adminRouter.post(
         const insertFeeSql = `
           INSERT INTO ADD_FEE (loan_id, book_id, copies_serial, type, amount, date)
           VALUES ($1, $2, $3, 'renew', $4, CURRENT_DATE)
+          ON CONFLICT (loan_id, book_id, copies_serial, type) 
+          DO UPDATE SET amount = EXCLUDED.amount, date = EXCLUDED.date
           RETURNING *
         `;
         const feeRes = await client.query(insertFeeSql, [loanId, bookId, copiesSerial, renewFee]);
@@ -2447,8 +2561,7 @@ async function processReturnItem(
   bookId: number,
   copiesSerial: number,
   finalCondition: string | undefined,
-  lost: boolean,
-  immediateCharge: boolean
+  lost: boolean
 ): Promise<{ success: boolean; total_add_fee?: number; error?: string }> {
   try {
     // Lock the loan record and copy
@@ -2513,6 +2626,8 @@ async function processReturnItem(
       const insertOverdueSql = `
         INSERT INTO ADD_FEE (loan_id, book_id, copies_serial, type, amount, date)
         VALUES ($1, $2, $3, 'overdue', $4, $5)
+        ON CONFLICT (loan_id, book_id, copies_serial, type) 
+        DO UPDATE SET amount = EXCLUDED.amount, date = EXCLUDED.date
       `;
       await client.query(insertOverdueSql, [loanId, bookId, copiesSerial, amount, today]);
     }
@@ -2530,6 +2645,8 @@ async function processReturnItem(
       const insertLostSql = `
         INSERT INTO ADD_FEE (loan_id, book_id, copies_serial, type, amount, date)
         VALUES ($1, $2, $3, 'lost', $4, $5)
+        ON CONFLICT (loan_id, book_id, copies_serial, type) 
+        DO UPDATE SET amount = EXCLUDED.amount, date = EXCLUDED.date
       `;
       await client.query(insertLostSql, [loanId, bookId, copiesSerial, amount, today]);
 
@@ -2561,6 +2678,8 @@ async function processReturnItem(
           const insertDamageSql = `
             INSERT INTO ADD_FEE (loan_id, book_id, copies_serial, type, amount, date)
             VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (loan_id, book_id, copies_serial, type) 
+            DO UPDATE SET amount = EXCLUDED.amount, date = EXCLUDED.date
           `;
           await client.query(insertDamageSql, [loanId, bookId, copiesSerial, feeType, amount, today]);
         }
@@ -2606,12 +2725,34 @@ async function processReturnItem(
       await client.query(updCopySql, [bookId, copiesSerial]);
     }
 
-    // Charge member if requested
-    if (immediateCharge && totalAddFee > 0) {
+    // 自動從會員餘額扣除額外費用
+    if (totalAddFee > 0) {
+      // 重新查詢會員當前餘額（在 transaction 中，確保使用最新餘額）
+      const memberBalanceSql = `
+        SELECT balance
+        FROM MEMBER
+        WHERE member_id = $1
+        FOR UPDATE
+      `;
+      const memberBalanceRes = await client.query(memberBalanceSql, [rec.member_id]);
+      if (memberBalanceRes.rowCount === 0) {
+        return { success: false, error: '找不到會員' };
+      }
+      const currentBalance = Number(memberBalanceRes.rows[0].balance);
+      
+      // 檢查餘額是否足夠
+      if (currentBalance < totalAddFee) {
+        return { 
+          success: false, 
+          error: `會員餘額不足，無法支付額外費用 ${totalAddFee} 元（目前餘額：${currentBalance} 元）` 
+        };
+      }
+      
       const updMemberSql = `
         UPDATE MEMBER
         SET balance = balance - $1
         WHERE member_id = $2
+        RETURNING balance
       `;
       await client.query(updMemberSql, [totalAddFee, rec.member_id]);
     }
@@ -2640,7 +2781,7 @@ adminRouter.post(
       const result = await withTransaction(async (client) => {
         const results = await Promise.all(
           items.map(async (item: any) => {
-            const { loan_id, book_id, copies_serial, final_condition, lost = false, immediateCharge = false } = item;
+            const { loan_id, book_id, copies_serial, final_condition, lost = false } = item;
 
             if (!Number.isFinite(loan_id) || !Number.isFinite(book_id) || !Number.isFinite(copies_serial)) {
               return {
@@ -2658,8 +2799,7 @@ adminRouter.post(
               book_id,
               copies_serial,
               final_condition,
-              lost,
-              immediateCharge
+              lost
             );
 
             return {

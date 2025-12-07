@@ -2,11 +2,13 @@ import { useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { MemberProvider, useMember } from './context/MemberContext';
 import { AdminProvider, useAdmin } from './context/AdminContext';
+import { ReservationCartProvider } from './context/ReservationCartContext';
 import { MemberDashboard } from './pages/member/MemberDashboard';
 import { MemberLoginPage } from './pages/member/MemberLoginPage';
 import { BookSearchPage } from './pages/member/BookSearchPage';
 import { BookDetailPage } from './pages/member/BookDetailPage';
 import { MemberReservationsPage } from './pages/member/MemberReservationsPage';
+import { ReservationCartPage } from './pages/member/ReservationCartPage';
 import { MemberLoansActivePage } from './pages/member/MemberLoansActivePage';
 import { MemberLoansHistoryPage } from './pages/member/MemberLoansHistoryPage';
 import { MemberStatsPage } from './pages/member/MemberStatsPage';
@@ -126,6 +128,20 @@ function AppShell() {
                       <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
                     </svg>
                     {!sidebarCollapsed && <span>書籍搜尋</span>}
+                  </NavLink>
+                  <NavLink
+                    to="/member/reservations/cart"
+                    className={({ isActive }) =>
+                      'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
+                    }
+                    title="預約購物車"
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="9" cy="21" r="1"></circle>
+                      <circle cx="20" cy="21" r="1"></circle>
+                      <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+                    </svg>
+                    {!sidebarCollapsed && <span>預約購物車</span>}
                   </NavLink>
                   <NavLink
                     to="/member/reservations"
@@ -409,6 +425,14 @@ function AppShell() {
             <Route path="/member/books" element={<BookSearchPage />} />
             <Route path="/member/books/:bookId" element={<BookDetailPage />} />
             <Route
+              path="/member/reservations/cart"
+              element={
+                <ProtectedMemberRoute>
+                  <ReservationCartPage />
+                </ProtectedMemberRoute>
+              }
+            />
+            <Route
               path="/member/reservations"
               element={
                 <ProtectedMemberRoute>
@@ -518,7 +542,9 @@ export default function App() {
   return (
     <AdminProvider>
       <MemberProvider>
-        <AppShell />
+        <ReservationCartProvider>
+          <AppShell />
+        </ReservationCartProvider>
       </MemberProvider>
     </AdminProvider>
   );

@@ -182,27 +182,69 @@ memberRouter.delete(
         });
       }
 
-      const sql = `
-        UPDATE RESERVATION
-        SET status = 'Cancelled'
-        WHERE reservation_id = $1
-          AND member_id = $2
-          AND status = 'Active'
-        RETURNING *
-      `;
-
-      const result = await query(sql, [reservationId, memberId]);
-      if (result.rowCount === 0) {
-        return res.status(400).json({
-          success: false,
-          error: {
+      const result = await withTransaction(async (client) => {
+        // 1. 驗證預約存在且屬於該會員
+        const checkSql = `
+          SELECT reservation_id, member_id, status
+          FROM RESERVATION
+          WHERE reservation_id = $1
+            AND member_id = $2
+            AND status = 'Active'
+          FOR UPDATE
+        `;
+        const checkRes = await client.query(checkSql, [reservationId, memberId]);
+        if (checkRes.rowCount === 0) {
+          throw {
+            type: 'business',
+            status: 400,
             code: 'CANNOT_CANCEL',
             message: '預約不存在、非該會員，或狀態不可取消',
-          },
-        });
-      }
+          };
+        }
 
-      return res.json({ success: true, data: result.rows[0] });
+        // 2. 查詢 RESERVATION_RECORD 取得所有 book_id
+        const bookIdsSql = `
+          SELECT book_id 
+          FROM RESERVATION_RECORD 
+          WHERE reservation_id = $1
+        `;
+        const bookIdsRes = await client.query(bookIdsSql, [reservationId]);
+
+        // 3. 對每個 book_id，釋放該預約對應的 Reserved 複本
+        // 由於一個會員只能對同一本書進行一筆預約，所以該 book_id 的 reserved 複本應該就是這個預約的
+        // PostgreSQL 不支援 UPDATE ... LIMIT，需要使用子查詢
+        for (const row of bookIdsRes.rows) {
+          const updateResult = await client.query(
+            `UPDATE BOOK_COPIES 
+             SET status = 'Available' 
+             WHERE ctid = (
+               SELECT ctid 
+               FROM BOOK_COPIES 
+               WHERE book_id = $1 
+                 AND status = 'Reserved'
+               LIMIT 1
+             )`,
+            [row.book_id]
+          );
+          // 如果沒有找到 reserved 複本，可能是資料不一致，但不影響取消預約的操作
+          if (updateResult.rowCount === 0) {
+            console.warn(`警告：取消預約 ${reservationId} 時，書籍 ${row.book_id} 沒有找到 reserved 複本`);
+          }
+        }
+
+        // 4. 更新 RESERVATION
+        const updateSql = `
+          UPDATE RESERVATION 
+          SET status = 'Cancelled' 
+          WHERE reservation_id = $1
+          RETURNING *
+        `;
+        const updateRes = await client.query(updateSql, [reservationId]);
+
+        return updateRes.rows[0];
+      });
+
+      return res.json({ success: true, data: result });
     } catch (err) {
       next(err);
     }
@@ -474,6 +516,8 @@ memberRouter.post(
         const insertFeeSql = `
           INSERT INTO ADD_FEE (loan_id, book_id, copies_serial, type, amount, date)
           VALUES ($1, $2, $3, 'renew', $4, CURRENT_DATE)
+          ON CONFLICT (loan_id, book_id, copies_serial, type) 
+          DO UPDATE SET amount = EXCLUDED.amount, date = EXCLUDED.date
           RETURNING *
         `;
         const feeRes = await client.query(insertFeeSql, [loanId, bookId, copiesSerial, renewFee]);

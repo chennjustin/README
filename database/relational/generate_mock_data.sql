@@ -1,10 +1,32 @@
 -- ============================================
--- 獨立租借書店系統 - 虛擬資料生成腳本
+-- 獨立租借書店系統 - 虛擬資料生成腳本（重新設計）
 -- PostgreSQL (Supabase)
 -- ============================================
--- 此腳本生成測試用的虛擬資料
--- 注意：此腳本假設 BOOK 表已經有資料，不會生成 BOOK 資料
+-- 此腳本生成測試用的虛擬資料，確保資料一致性
 -- 執行前請確保已執行 001_initial_schema.sql 和 seed.sql
+-- 
+-- 資料一致性保證：
+-- 1. 如果有 member 正在借一本書，那本書的 available_count 會正確減少
+-- 2. 如果有書 lost，對應的 member 會被扣罰金
+-- 3. 預約的書會正確設為 reserved 狀態
+-- 4. 會員餘額 = 總儲值 - 借閱費用 - 額外費用（包括罰金）
+-- 5. 一個會員只能對同一本書進行一筆預約
+
+-- ============================================
+-- 清理舊資料（可選，用於重新生成）
+-- ============================================
+-- 注意：如果資料庫已有重要資料，請註解掉以下清理語句
+/*
+DELETE FROM ADD_FEE;
+DELETE FROM LOAN_RECORD;
+DELETE FROM BOOK_LOAN;
+DELETE FROM RESERVATION_RECORD;
+DELETE FROM RESERVATION;
+DELETE FROM TOP_UP;
+DELETE FROM MEMBER WHERE member_id > 100; -- 保留 seed 中的測試會員
+DELETE FROM BOOK_COPIES;
+DELETE FROM ADMIN WHERE admin_id > 10; -- 保留 seed 中的測試管理員
+*/
 
 -- ============================================
 -- 1. ADMIN - 店員/管理員資料
@@ -23,9 +45,6 @@ ON CONFLICT DO NOTHING;
 -- ============================================
 -- 2. MEMBER - 會員資料
 -- ============================================
--- 生成更多會員以支援 1000+ 筆借閱記錄
--- 假設 level_id: 1=銅, 2=銀, 3=金（從 seed.sql）
--- 注意：初始 balance 設為 0，之後會根據 TOP_UP 和借閱費用更新
 DO $$
 DECLARE
     i INTEGER;
@@ -49,17 +68,11 @@ BEGIN
             level_id_val := 3; -- 金
         END IF;
         
-        -- 隨機分配管理員（從已存在的管理員中選擇）
-        -- 先取得管理員數量，然後隨機選擇
+        -- 隨機分配管理員
         SELECT admin_id INTO admin_id_val
         FROM ADMIN
         ORDER BY RANDOM()
         LIMIT 1;
-        
-        -- 如果沒有管理員，設為 NULL
-        IF admin_id_val IS NULL THEN
-            admin_id_val := NULL;
-        END IF;
         
         -- 隨機加入日期（2022/1/1 ~ 2025/12/5）
         join_date_val := '2022-01-01'::DATE + (floor(random() * 1400)::INTEGER || ' days')::INTERVAL;
@@ -78,21 +91,18 @@ BEGIN
             status_val := 'Suspended';
         END IF;
         
-        -- 初始 balance 設為 0，之後會根據 TOP_UP 和借閱費用更新
+        -- 初始 balance 設為 0，之後會根據 TOP_UP 和費用更新
         INSERT INTO MEMBER (name, level_id, admin_id, join_date, email, phone, balance, status)
         VALUES (member_name, level_id_val, admin_id_val, join_date_val, email_val, phone_val, 0, status_val)
         ON CONFLICT DO NOTHING;
     END LOOP;
+    
+    RAISE NOTICE '✅ 已生成會員資料';
 END $$;
 
 -- ============================================
 -- 3. BOOK_COPIES - 書籍複本資料
 -- ============================================
--- 為每一本書生成複本
--- 邏輯：每一本書都至少有一個複本
--- - 60% 的書只有 1 個複本
--- - 40% 的書有 2-5 個複本
--- 初始狀態全部設為 'Available'，之後根據借閱記錄更新
 DO $$
 DECLARE
     book_rec RECORD;
@@ -100,7 +110,7 @@ DECLARE
     i INTEGER;
     purchase_date DATE;
     purchase_price INTEGER;
-    condition_val VARCHAR(20);  -- 重命名變數避免與表欄位名衝突
+    condition_val VARCHAR(20);
     rental_price INTEGER;
 BEGIN
     FOR book_rec IN SELECT book_id, price FROM BOOK ORDER BY book_id
@@ -108,9 +118,9 @@ BEGIN
         -- 每一本書都至少有一個複本
         -- 60% 的書只有 1 個複本，40% 的書有 2-5 個複本
         IF random() < 0.6 THEN
-            copies_count := 1; -- 60% 的書只有 1 個複本
+            copies_count := 1;
         ELSE
-            copies_count := 2 + floor(random() * 4)::INTEGER; -- 40% 的書有 2-5 個複本
+            copies_count := 2 + floor(random() * 4)::INTEGER;
         END IF;
         
         FOR i IN 1..copies_count
@@ -130,13 +140,13 @@ BEGIN
                 condition_val := 'Poor';
             END IF;
             
-            -- 計算租金（定價 × 折扣因子 × 0.1）
+            -- 計算租金（定價 × 折扣因子）
             SELECT cd.discount_factor INTO rental_price 
             FROM CONDITION_DISCOUNT cd
             WHERE cd.book_condition = condition_val;
-            rental_price := floor(book_rec.price * rental_price * 0.1)::INTEGER;
+            rental_price := floor(book_rec.price * rental_price)::INTEGER;
             
-            -- 初始狀態全部設為 'Available'，之後根據借閱記錄更新
+            -- 初始狀態全部設為 'Available'
             INSERT INTO BOOK_COPIES (
                 book_id, copies_serial, status, purchase_date, 
                 purchase_price, book_condition, rental_price
@@ -148,309 +158,227 @@ BEGIN
             ON CONFLICT DO NOTHING;
         END LOOP;
     END LOOP;
+    
+    RAISE NOTICE '✅ 已生成書籍複本資料';
 END $$;
 
 -- ============================================
--- 4. BOOK_LOAN - 借閱交易資料
+-- 4. TOP_UP - 儲值記錄（先生成，用於後續計算餘額）
 -- ============================================
--- 生成超過 1000 筆借閱記錄，時間範圍：2023/1/1 ~ 2025/12/5
 DO $$
 DECLARE
     member_rec RECORD;
     admin_ids INTEGER[];
     random_admin_id INTEGER;
-    loan_date DATE;
-    books_to_borrow INTEGER;
+    top_up_date_val DATE;
+    top_up_amount INTEGER;
+    join_date_val DATE;
     i INTEGER;
-    loan_id_val BIGINT;
-    total_loans INTEGER := 0;
-    target_loans INTEGER := 1200; -- 目標生成 1200 筆借閱記錄
-    start_date DATE := '2023-01-01'::DATE;
     end_date DATE := '2025-12-05'::DATE;
-    days_range INTEGER;
+    days_since_join INTEGER;
 BEGIN
-    -- 取得所有管理員 ID
     SELECT ARRAY_AGG(admin_id) INTO admin_ids FROM ADMIN WHERE status = 'Active';
-    days_range := end_date - start_date;
     
-    -- 持續生成直到達到目標數量
-    WHILE total_loans < target_loans
+    FOR member_rec IN SELECT member_id, join_date FROM MEMBER
     LOOP
-        -- 隨機選擇一個活躍會員
-        FOR member_rec IN 
-            SELECT m.member_id, ml.max_book_allowed 
-            FROM MEMBER m 
-            JOIN MEMBERSHIP_LEVEL ml ON m.level_id = ml.level_id 
-            WHERE m.status = 'Active'
-            ORDER BY RANDOM()
-            LIMIT 1
+        join_date_val := member_rec.join_date;
+        days_since_join := end_date - join_date_val;
+        
+        -- 每個會員生成 1-5 筆儲值記錄
+        FOR i IN 1..(1 + floor(random() * 5)::INTEGER)
         LOOP
-            -- 隨機借閱日期（2023/1/1 ~ 2025/12/5）
-            loan_date := start_date + (floor(random() * days_range)::INTEGER || ' days')::INTERVAL;
+            top_up_date_val := join_date_val + (floor(random() * days_since_join)::INTEGER || ' days')::INTERVAL;
             
-            -- 隨機選擇管理員（確保索引不超出範圍）
             IF array_length(admin_ids, 1) > 0 THEN
                 random_admin_id := admin_ids[1 + floor(random() * array_length(admin_ids, 1))::INTEGER];
             ELSE
                 RAISE EXCEPTION '沒有可用的管理員';
             END IF;
             
-            -- 每筆借閱 1-3 本書（不超過會員上限）
-            books_to_borrow := LEAST(1 + floor(random() * 3)::INTEGER, member_rec.max_book_allowed);
+            -- 隨機儲值金額（100-10000 元）
+            top_up_amount := 100 + floor(random() * 9900)::INTEGER;
             
-            -- 插入借閱交易（final_price 稍後更新）
+            INSERT INTO TOP_UP (member_id, admin_id, amount, top_up_date)
+            VALUES (member_rec.member_id, random_admin_id, top_up_amount, top_up_date_val)
+            ON CONFLICT DO NOTHING;
+        END LOOP;
+    END LOOP;
+    
+    RAISE NOTICE '✅ 已生成儲值記錄';
+END $$;
+
+-- ============================================
+-- 5. BOOK_LOAN + LOAN_RECORD - 借閱交易與記錄
+-- ============================================
+-- 按時間順序生成借閱記錄，確保資料一致性
+DO $$
+DECLARE
+    member_rec RECORD;
+    admin_ids INTEGER[];
+    random_admin_id INTEGER;
+    loan_date DATE;
+    return_date DATE;
+    due_date DATE;
+    books_to_borrow INTEGER;
+    i INTEGER;
+    loan_id_val BIGINT;
+    total_loans INTEGER := 0;
+    target_loans INTEGER := 1200;
+    start_date DATE := '2023-01-01'::DATE;
+    end_date DATE := '2025-12-05'::DATE;
+    days_range INTEGER;
+    copy_rec RECORD;
+    rental_fee_val INTEGER;
+    total_fee INTEGER;
+    member_level_id INTEGER;
+    discount_rate_val DECIMAL(3,2);
+    hold_days_val INTEGER;
+    renew_cnt_val INTEGER;
+    is_lost BOOLEAN;
+    lost_probability REAL := 0.02; -- 2% 機率遺失
+BEGIN
+    SELECT ARRAY_AGG(admin_id) INTO admin_ids FROM ADMIN WHERE status = 'Active';
+    days_range := end_date - start_date;
+    
+    WHILE total_loans < target_loans
+    LOOP
+        FOR member_rec IN 
+            SELECT m.member_id, ml.max_book_allowed, ml.discount_rate, ml.hold_days, m.level_id
+            FROM MEMBER m 
+            JOIN MEMBERSHIP_LEVEL ml ON m.level_id = ml.level_id 
+            WHERE m.status = 'Active'
+            ORDER BY RANDOM()
+            LIMIT 1
+        LOOP
+            loan_date := start_date + (floor(random() * days_range)::INTEGER || ' days')::INTERVAL;
+            
+            IF array_length(admin_ids, 1) > 0 THEN
+                random_admin_id := admin_ids[1 + floor(random() * array_length(admin_ids, 1))::INTEGER];
+            ELSE
+                RAISE EXCEPTION '沒有可用的管理員';
+            END IF;
+            
+            books_to_borrow := LEAST(1 + floor(random() * 3)::INTEGER, member_rec.max_book_allowed);
+            total_fee := 0;
+            
+            -- 建立借閱交易
             INSERT INTO BOOK_LOAN (admin_id, member_id, final_price)
             VALUES (random_admin_id, member_rec.member_id, 0)
             RETURNING loan_id INTO loan_id_val;
             
+            -- 為每本書選擇一個可用的複本（在借閱日期時）
+            FOR i IN 1..books_to_borrow
+            LOOP
+                -- 選擇一個在借閱日期時可用的複本
+                -- 這裡我們選擇一個隨機的複本，之後會根據實際借閱情況更新狀態
+                SELECT bc.book_id, bc.copies_serial, bc.rental_price
+                INTO copy_rec
+                FROM BOOK_COPIES bc
+                WHERE bc.status = 'Available'
+                ORDER BY RANDOM()
+                LIMIT 1;
+                
+                -- 如果沒有可用的複本，跳過這筆借閱
+                IF copy_rec.book_id IS NULL THEN
+                    EXIT;
+                END IF;
+                
+                -- 計算租金
+                rental_fee_val := floor(copy_rec.rental_price * member_rec.discount_rate)::INTEGER;
+                total_fee := total_fee + rental_fee_val;
+                
+                -- 計算應還日期
+                due_date := loan_date + (member_rec.hold_days || ' days')::INTERVAL;
+                
+                -- 決定是否已歸還（70% 已歸還，30% 未歸還）
+                IF random() < 0.7 THEN
+                    -- 已歸還：歸還日期在借出日期到應還日期+30天之間
+                    return_date := loan_date + (floor(random() * (member_rec.hold_days + 30))::INTEGER || ' days')::INTERVAL;
+                ELSE
+                    return_date := NULL;
+                END IF;
+                
+                -- 決定是否續借（只有在未歸還的情況下才可能續借，20% 機率）
+                IF return_date IS NULL AND random() < 0.2 THEN
+                    renew_cnt_val := 1;
+                    due_date := due_date + 7;
+                ELSE
+                    renew_cnt_val := 0;
+                END IF;
+                
+                -- 決定是否遺失（只有在已歸還的情況下才可能遺失，2% 機率）
+                is_lost := (return_date IS NOT NULL AND random() < lost_probability);
+                
+                -- 插入借閱記錄
+                INSERT INTO LOAN_RECORD (
+                    loan_id, book_id, copies_serial, date_out, 
+                    due_date, return_date, rental_fee, renew_cnt
+                )
+                VALUES (
+                    loan_id_val, copy_rec.book_id, 
+                    copy_rec.copies_serial, loan_date,
+                    due_date, return_date, rental_fee_val, renew_cnt_val
+                )
+                ON CONFLICT DO NOTHING;
+                
+                -- 更新複本狀態
+                IF is_lost THEN
+                    -- 遺失：設為 Lost
+                    UPDATE BOOK_COPIES
+                    SET status = 'Lost'
+                    WHERE book_id = copy_rec.book_id AND copies_serial = copy_rec.copies_serial;
+                ELSIF return_date IS NULL THEN
+                    -- 未歸還：設為 Borrowed
+                    UPDATE BOOK_COPIES
+                    SET status = 'Borrowed'
+                    WHERE book_id = copy_rec.book_id AND copies_serial = copy_rec.copies_serial;
+                ELSE
+                    -- 已歸還：設為 Available
+                    UPDATE BOOK_COPIES
+                    SET status = 'Available'
+                    WHERE book_id = copy_rec.book_id AND copies_serial = copy_rec.copies_serial;
+                END IF;
+            END LOOP;
+            
+            -- 更新借閱交易的總金額
+            UPDATE BOOK_LOAN 
+            SET final_price = total_fee 
+            WHERE loan_id = loan_id_val;
+            
             total_loans := total_loans + 1;
             
-            -- 如果達到目標，退出
             IF total_loans >= target_loans THEN
                 EXIT;
             END IF;
         END LOOP;
     END LOOP;
     
-    RAISE NOTICE '已生成 % 筆借閱交易', total_loans;
+    RAISE NOTICE '✅ 已生成 % 筆借閱記錄', total_loans;
 END $$;
 
 -- ============================================
--- 5. LOAN_RECORD - 借閱記錄詳情
+-- 6. ADD_FEE - 額外費用記錄
 -- ============================================
--- 為每筆借閱交易生成詳細記錄
-DO $$
-DECLARE
-    loan_rec RECORD;
-    available_copies RECORD;
-    copies_to_borrow INTEGER;
-    i INTEGER;
-    date_out_val DATE;
-    due_date_val DATE;
-    return_date_val DATE;
-    rental_fee_val INTEGER;
-    renew_cnt_val INTEGER;
-    total_fee INTEGER := 0;
-    member_level_id INTEGER;
-    discount_rate_val DECIMAL(3,2);
-    hold_days_val INTEGER;
-    start_date DATE := '2023-01-01'::DATE;
-    end_date DATE := '2025-12-05'::DATE;
-    days_range INTEGER;
-BEGIN
-    days_range := end_date - start_date;
-    
-    FOR loan_rec IN 
-        SELECT bl.loan_id, bl.member_id, bl.admin_id, bl.final_price
-        FROM BOOK_LOAN bl
-        ORDER BY bl.loan_id
-    LOOP
-        -- 取得會員等級折扣率和持有天數
-        SELECT m.level_id, ml.discount_rate, ml.hold_days
-        INTO member_level_id, discount_rate_val, hold_days_val
-        FROM MEMBER m
-        JOIN MEMBERSHIP_LEVEL ml ON m.level_id = ml.level_id
-        WHERE m.member_id = loan_rec.member_id;
-        
-        -- 隨機借閱日期（2023/1/1 ~ 2025/12/5）
-        date_out_val := start_date + (floor(random() * days_range)::INTEGER || ' days')::INTERVAL;
-        
-        -- 每筆借閱 1-3 本書
-        copies_to_borrow := 1 + floor(random() * 3)::INTEGER;
-        
-        -- 取得可借閱的書籍複本（狀態為 Available）
-        FOR available_copies IN 
-            SELECT bc.book_id, bc.copies_serial, bc.rental_price
-            FROM BOOK_COPIES bc
-            WHERE bc.status = 'Available'
-            ORDER BY RANDOM()
-            LIMIT copies_to_borrow
-        LOOP
-            -- 計算租金（考慮會員折扣）
-            rental_fee_val := floor(available_copies.rental_price * discount_rate_val)::INTEGER;
-            total_fee := total_fee + rental_fee_val;
-            
-            -- 計算應還日期（根據會員等級的 hold_days）
-            due_date_val := date_out_val + (hold_days_val || ' days')::INTERVAL;
-            
-            -- 隨機決定是否已歸還（70% 已歸還，30% 未歸還）
-            IF random() < 0.7 THEN
-                -- 已歸還：歸還日期在借出日期到應還日期+30天之間
-                return_date_val := date_out_val + (floor(random() * (hold_days_val + 30))::INTEGER || ' days')::INTERVAL;
-            ELSE
-                -- 未歸還
-                return_date_val := NULL;
-            END IF;
-            
-            -- 隨機決定是否續借（20% 續借，且只有在已歸還的情況下才可能續借）
-            IF return_date_val IS NULL AND random() < 0.2 THEN
-                renew_cnt_val := 1;
-                -- 續借則延長 7 天
-                due_date_val := due_date_val + 7;
-            ELSE
-                renew_cnt_val := 0;
-            END IF;
-            
-            -- 插入借閱記錄
-            INSERT INTO LOAN_RECORD (
-                loan_id, book_id, copies_serial, date_out, 
-                due_date, return_date, rental_fee, renew_cnt
-            )
-            VALUES (
-                loan_rec.loan_id, available_copies.book_id, 
-                available_copies.copies_serial, date_out_val,
-                due_date_val, return_date_val, rental_fee_val, renew_cnt_val
-            )
-            ON CONFLICT DO NOTHING;
-        END LOOP;
-        
-        -- 更新借閱交易的總金額
-        UPDATE BOOK_LOAN 
-        SET final_price = total_fee 
-        WHERE loan_id = loan_rec.loan_id;
-        
-        total_fee := 0;
-    END LOOP;
-END $$;
-
--- ============================================
--- 6. 更新 BOOK_COPIES 狀態
--- ============================================
--- 根據借閱記錄、預約記錄和額外費用更新書籍複本狀態
--- 邏輯順序（重要！必須按順序處理）：
--- 1. Lost: 根據 ADD_FEE type='lost' 來設定對應的複本
--- 2. Borrowed: 根據 LOAN_RECORD return_date IS NULL（正在借閱中）
--- 3. Reserved: 根據 RESERVATION status='Active' 和 RESERVATION_RECORD，為每本書分配對應數量的複本
--- 4. Available: 剩餘的複本
--- 
--- 約束條件：
--- - Lost 的數量 = 有遺失費（ADD_FEE type='lost'）的複本數量
--- - Borrowed 的數量 = 正在借閱中（LOAN_RECORD return_date IS NULL）的複本數量
--- - Reserved 的數量 = 每本書的 Active 預約人數（RESERVATION status='Active'）
--- - 總數 = Available + Reserved + Borrowed + Lost
-DO $$
-DECLARE
-    book_rec RECORD;
-    reserved_count INTEGER;
-    available_copies RECORD;
-    copies_to_reserve INTEGER;
-BEGIN
-    -- 步驟 1: 將所有有遺失費的複本設為 Lost
-    UPDATE BOOK_COPIES bc
-    SET status = 'Lost'
-    WHERE EXISTS (
-        SELECT 1 
-        FROM ADD_FEE af 
-        WHERE af.book_id = bc.book_id 
-          AND af.copies_serial = bc.copies_serial
-          AND af.type = 'lost'
-    );
-    
-    -- 步驟 2: 將所有正在借閱中的複本設為 Borrowed（不包括 Lost）
-    UPDATE BOOK_COPIES bc
-    SET status = 'Borrowed'
-    WHERE bc.status != 'Lost'
-      AND EXISTS (
-          SELECT 1 
-          FROM LOAN_RECORD lr 
-          WHERE lr.book_id = bc.book_id 
-            AND lr.copies_serial = bc.copies_serial
-            AND lr.return_date IS NULL
-      );
-    
-    -- 步驟 3: 為每本書分配 Reserved 狀態
-    -- 對於每本書，統計有多少 Active 預約，然後從 Available 複本中選擇對應數量設為 Reserved
-    FOR book_rec IN 
-        SELECT DISTINCT b.book_id
-        FROM BOOK b
-        JOIN RESERVATION_RECORD rr ON b.book_id = rr.book_id
-        JOIN RESERVATION r ON rr.reservation_id = r.reservation_id
-        WHERE r.status = 'Active'
-    LOOP
-        -- 統計這本書有多少 Active 預約
-        SELECT COUNT(DISTINCT r.reservation_id) INTO reserved_count
-        FROM RESERVATION r
-        JOIN RESERVATION_RECORD rr ON r.reservation_id = rr.reservation_id
-        WHERE rr.book_id = book_rec.book_id
-          AND r.status = 'Active';
-        
-        -- 從這本書的複本中，選擇 reserved_count 個設為 Reserved
-        -- 選擇那些不是 Lost、Borrowed 的複本（可能是初始的 'Available' 狀態）
-        copies_to_reserve := 0;
-        FOR available_copies IN 
-            SELECT bc.book_id, bc.copies_serial
-            FROM BOOK_COPIES bc
-            WHERE bc.book_id = book_rec.book_id
-              AND bc.status != 'Lost'
-              AND bc.status != 'Borrowed'
-              AND NOT EXISTS (
-                  SELECT 1 
-                  FROM LOAN_RECORD lr 
-                  WHERE lr.book_id = bc.book_id 
-                    AND lr.copies_serial = bc.copies_serial
-                    AND lr.return_date IS NULL
-              )
-            ORDER BY bc.copies_serial
-            LIMIT reserved_count
-        LOOP
-            UPDATE BOOK_COPIES
-            SET status = 'Reserved'
-            WHERE book_id = available_copies.book_id
-              AND copies_serial = available_copies.copies_serial;
-            
-            copies_to_reserve := copies_to_reserve + 1;
-        END LOOP;
-    END LOOP;
-    
-    -- 步驟 4: 將剩餘的複本設為 Available（不包括 Lost、Borrowed、Reserved）
-    UPDATE BOOK_COPIES bc
-    SET status = 'Available'
-    WHERE bc.status NOT IN ('Lost', 'Borrowed', 'Reserved')
-      AND NOT EXISTS (
-          SELECT 1 
-          FROM LOAN_RECORD lr 
-          WHERE lr.book_id = bc.book_id 
-            AND lr.copies_serial = bc.copies_serial
-            AND lr.return_date IS NULL
-      );
-    
-    RAISE NOTICE '✅ BOOK_COPIES 狀態已更新';
-    RAISE NOTICE '  - Lost: % 個複本', (SELECT COUNT(*) FROM BOOK_COPIES WHERE status = 'Lost');
-    RAISE NOTICE '  - Borrowed: % 個複本', (SELECT COUNT(*) FROM BOOK_COPIES WHERE status = 'Borrowed');
-    RAISE NOTICE '  - Reserved: % 個複本', (SELECT COUNT(*) FROM BOOK_COPIES WHERE status = 'Reserved');
-    RAISE NOTICE '  - Available: % 個複本', (SELECT COUNT(*) FROM BOOK_COPIES WHERE status = 'Available');
-END $$;
-
--- ============================================
--- 7. ADD_FEE - 額外費用記錄
--- ============================================
--- 為借閱記錄生成額外費用（續借費、逾期費、損壞費等）
--- 
--- 重要邏輯說明：
--- 1. 同一筆借閱的同一本書，同一類型的費用只能有一筆（由主鍵約束保證）
--- 2. 逾期費：如果 return_date > due_date（已還書）或 return_date IS NULL 且 due_date < CURRENT_DATE（未還書但已逾期）
--- 3. 逾期費在還書時結清，但對於未還書的逾期情況，系統會每天更新這筆費用
--- 4. 續借費：在續借時產生（renew_cnt > 0）
--- 5. 損壞費：在還書時檢查並產生
+-- 根據借閱記錄生成額外費用，確保資料一致性
 DO $$
 DECLARE
     loan_record_rec RECORD;
     fee_amount INTEGER;
     fee_date DATE;
     overdue_days INTEGER;
+    lost_fee_amount INTEGER;
 BEGIN
     FOR loan_record_rec IN 
         SELECT lr.loan_id, lr.book_id, lr.copies_serial, 
                lr.date_out, lr.due_date, lr.return_date, lr.renew_cnt,
-               bc.purchase_price
+               bc.purchase_price, bc.status AS copy_status
         FROM LOAN_RECORD lr
         JOIN BOOK_COPIES bc ON lr.book_id = bc.book_id AND lr.copies_serial = bc.copies_serial
     LOOP
-        -- 如果續借，生成續借費
-        -- 注意：同一筆借閱的同一本書，只能有一筆 renew 類型的費用
+        -- 續借費（如果 renew_cnt > 0）
         IF loan_record_rec.renew_cnt > 0 THEN
             SELECT base_amount INTO fee_amount FROM FEE_TYPE WHERE type = 'renew';
-            fee_date := loan_record_rec.due_date - 7; -- 續借日期（假設續借延長 7 天）
+            fee_date := loan_record_rec.due_date - 7;
             
             INSERT INTO ADD_FEE (loan_id, book_id, copies_serial, type, amount, date)
             VALUES (loan_record_rec.loan_id, loan_record_rec.book_id, 
@@ -458,51 +386,55 @@ BEGIN
             ON CONFLICT (loan_id, book_id, copies_serial, type) DO NOTHING;
         END IF;
         
-        -- 如果逾期，生成逾期費（每逾期一天 10 元）
-        -- 逾期判斷：return_date > due_date（已還書）或 return_date IS NULL 且 due_date < CURRENT_DATE（未還書但已逾期）
+        -- 逾期費（如果 return_date > due_date 或未歸還但已逾期）
         IF (loan_record_rec.return_date IS NOT NULL 
             AND loan_record_rec.return_date > loan_record_rec.due_date)
            OR (loan_record_rec.return_date IS NULL 
                AND loan_record_rec.due_date < CURRENT_DATE) THEN
             SELECT base_amount INTO fee_amount FROM FEE_TYPE WHERE type = 'overdue';
             
-            -- 計算逾期天數
             IF loan_record_rec.return_date IS NOT NULL THEN
-                -- 已還書：計算到還書日期的逾期天數
                 overdue_days := loan_record_rec.return_date - loan_record_rec.due_date;
             ELSE
-                -- 未還書但已逾期：計算到今天的逾期天數（模擬系統每天更新的情況）
                 overdue_days := CURRENT_DATE - loan_record_rec.due_date;
             END IF;
             
-            -- 限制逾期費：最多收取 365 天的費用（3650 元）
-            -- 超過 365 天不再收取，因為會由店員手動停權
+            -- 限制逾期費：最多收取 365 天的費用
             IF overdue_days > 365 THEN
                 overdue_days := 365;
             END IF;
             
             fee_amount := fee_amount * overdue_days;
-            fee_date := loan_record_rec.due_date + 1; -- 逾期開始日期
+            fee_date := loan_record_rec.due_date + 1;
             
-            -- 插入或更新逾期費（同一筆借閱的同一本書，同一類型費用只能有一筆）
-            -- 使用 ON CONFLICT 確保不會產生多筆同類型的費用
             INSERT INTO ADD_FEE (loan_id, book_id, copies_serial, type, amount, date)
             VALUES (loan_record_rec.loan_id, loan_record_rec.book_id, 
                     loan_record_rec.copies_serial, 'overdue', fee_amount, fee_date)
             ON CONFLICT (loan_id, book_id, copies_serial, type) 
-            DO UPDATE SET 
-                amount = EXCLUDED.amount,  -- 更新金額（模擬每天更新的情況）
-                date = EXCLUDED.date;      -- 更新日期
+            DO UPDATE SET amount = EXCLUDED.amount, date = EXCLUDED.date;
         END IF;
         
-        -- 隨機生成損壞費（5% 機率，只在還書時產生）
-        -- 注意：同一筆借閱的同一本書，只能有一筆損壞費（damage_* 類型）
-        IF random() < 0.05 AND loan_record_rec.return_date IS NOT NULL THEN
+        -- 遺失費（如果複本狀態為 Lost）
+        IF loan_record_rec.copy_status = 'Lost' THEN
+            SELECT rate INTO lost_fee_amount FROM FEE_TYPE WHERE type = 'lost';
+            lost_fee_amount := floor(loan_record_rec.purchase_price * lost_fee_amount)::INTEGER;
+            fee_date := COALESCE(loan_record_rec.return_date, loan_record_rec.due_date + 1);
+            
+            INSERT INTO ADD_FEE (loan_id, book_id, copies_serial, type, amount, date)
+            VALUES (loan_record_rec.loan_id, loan_record_rec.book_id, 
+                    loan_record_rec.copies_serial, 'lost', lost_fee_amount, fee_date)
+            ON CONFLICT (loan_id, book_id, copies_serial, type) DO NOTHING;
+        END IF;
+        
+        -- 損壞費（5% 機率，只在已歸還且未遺失的情況下產生）
+        IF loan_record_rec.return_date IS NOT NULL 
+           AND loan_record_rec.copy_status != 'Lost' 
+           AND random() < 0.05 THEN
             -- 隨機選擇損壞類型
             IF random() < 0.33 THEN
                 SELECT rate INTO fee_amount FROM FEE_TYPE WHERE type = 'damage_good_to_fair';
                 fee_amount := floor(loan_record_rec.purchase_price * fee_amount)::INTEGER;
-                fee_date := loan_record_rec.return_date; -- 損壞費在還書時產生
+                fee_date := loan_record_rec.return_date;
                 
                 INSERT INTO ADD_FEE (loan_id, book_id, copies_serial, type, amount, date)
                 VALUES (loan_record_rec.loan_id, loan_record_rec.book_id, 
@@ -511,7 +443,7 @@ BEGIN
             ELSIF random() < 0.66 THEN
                 SELECT rate INTO fee_amount FROM FEE_TYPE WHERE type = 'damage_fair_to_poor';
                 fee_amount := floor(loan_record_rec.purchase_price * fee_amount)::INTEGER;
-                fee_date := loan_record_rec.return_date; -- 損壞費在還書時產生
+                fee_date := loan_record_rec.return_date;
                 
                 INSERT INTO ADD_FEE (loan_id, book_id, copies_serial, type, amount, date)
                 VALUES (loan_record_rec.loan_id, loan_record_rec.book_id, 
@@ -519,26 +451,15 @@ BEGIN
                 ON CONFLICT (loan_id, book_id, copies_serial, type) DO NOTHING;
             END IF;
         END IF;
-        
-        -- 隨機生成遺失費（2% 機率，只在還書時產生）
-        -- 注意：遺失費 = 購買價格全額
-        IF random() < 0.02 AND loan_record_rec.return_date IS NOT NULL THEN
-            SELECT rate INTO fee_amount FROM FEE_TYPE WHERE type = 'lost';
-            fee_amount := floor(loan_record_rec.purchase_price * fee_amount)::INTEGER;
-            fee_date := loan_record_rec.return_date; -- 遺失費在還書時產生
-            
-            INSERT INTO ADD_FEE (loan_id, book_id, copies_serial, type, amount, date)
-            VALUES (loan_record_rec.loan_id, loan_record_rec.book_id, 
-                    loan_record_rec.copies_serial, 'lost', fee_amount, fee_date)
-            ON CONFLICT (loan_id, book_id, copies_serial, type) DO NOTHING;
-        END IF;
     END LOOP;
+    
+    RAISE NOTICE '✅ 已生成額外費用記錄';
 END $$;
 
 -- ============================================
--- 8. RESERVATION - 預約記錄
+-- 7. RESERVATION - 預約記錄
 -- ============================================
--- 生成預約記錄
+-- 生成預約記錄，確保一個會員只能對同一本書進行一筆預約
 DO $$
 DECLARE
     member_rec RECORD;
@@ -546,11 +467,13 @@ DECLARE
     pickup_date DATE;
     status_val VARCHAR(15);
     reservation_id_val BIGINT;
-    books_to_reserve INTEGER;
-    i INTEGER;
+    book_rec RECORD;
     start_date DATE := '2023-01-01'::DATE;
     end_date DATE := '2025-12-05'::DATE;
     days_range INTEGER;
+    books_to_reserve INTEGER;
+    i INTEGER;
+    existing_reservation_count INTEGER;
 BEGIN
     days_range := end_date - start_date;
     
@@ -562,7 +485,6 @@ BEGIN
         -- 每個會員生成 0-3 筆預約
         FOR i IN 1..(floor(random() * 4)::INTEGER)
         LOOP
-            -- 隨機預約日期（2023/1/1 ~ 2025/12/5）
             reservation_date := start_date + (floor(random() * days_range)::INTEGER || ' days')::INTERVAL;
             
             -- 隨機決定狀態
@@ -581,100 +503,85 @@ BEGIN
             VALUES (member_rec.member_id, reservation_date, pickup_date, status_val)
             RETURNING reservation_id INTO reservation_id_val;
             
-            -- 生成預約書籍記錄（在下一步處理）
+            -- 每筆預約 1-3 本書
+            books_to_reserve := 1 + floor(random() * 3)::INTEGER;
+            
+            -- 為每筆預約分配書籍，確保一個會員不會對同一本書重複預約
+            FOR book_rec IN 
+                SELECT DISTINCT b.book_id
+                FROM BOOK b
+                WHERE NOT EXISTS (
+                    -- 檢查該會員是否已經有該本書的 Active 預約
+                    SELECT 1
+                    FROM RESERVATION r
+                    JOIN RESERVATION_RECORD rr ON r.reservation_id = rr.reservation_id
+                    WHERE r.member_id = member_rec.member_id
+                      AND rr.book_id = b.book_id
+                      AND r.status = 'Active'
+                )
+                ORDER BY RANDOM()
+                LIMIT books_to_reserve
+            LOOP
+                INSERT INTO RESERVATION_RECORD (reservation_id, book_id)
+                VALUES (reservation_id_val, book_rec.book_id)
+                ON CONFLICT DO NOTHING;
+            END LOOP;
         END LOOP;
     END LOOP;
-END $$;
-
--- ============================================
--- 9. RESERVATION_RECORD - 預約書籍關聯
--- ============================================
--- 為每筆預約分配書籍
-DO $$
-DECLARE
-    reservation_rec RECORD;
-    book_rec RECORD;
-    books_to_reserve INTEGER;
-    i INTEGER;
-BEGIN
-    FOR reservation_rec IN 
-        SELECT reservation_id FROM RESERVATION
-    LOOP
-        -- 每筆預約 1-3 本書
-        books_to_reserve := 1 + floor(random() * 3)::INTEGER;
-        
-        -- 隨機選擇書籍
-        FOR book_rec IN 
-            SELECT book_id FROM BOOK 
-            ORDER BY RANDOM() 
-            LIMIT books_to_reserve
-        LOOP
-            INSERT INTO RESERVATION_RECORD (reservation_id, book_id)
-            VALUES (reservation_rec.reservation_id, book_rec.book_id)
-            ON CONFLICT DO NOTHING;
-        END LOOP;
-    END LOOP;
-END $$;
-
--- ============================================
--- 10. TOP_UP - 儲值記錄
--- ============================================
--- 為會員生成儲值記錄
--- 注意：會員等級應該依據單次儲值金額判定，而不是累積 balance
--- 銅級：單次儲值 500-1499, 銀級：1500-2999, 金級：3000+
--- 邏輯：先生成所有儲值記錄，之後統一更新 MEMBER 的 balance
-DO $$
-DECLARE
-    member_rec RECORD;
-    admin_ids INTEGER[];
-    random_admin_id INTEGER;
-    top_up_date_val DATE;
-    top_up_amount INTEGER;
-    join_date_val DATE;
-    i INTEGER;
-    end_date DATE := '2025-12-05'::DATE;
-    days_since_join INTEGER;
-BEGIN
-    -- 取得所有管理員 ID
-    SELECT ARRAY_AGG(admin_id) INTO admin_ids FROM ADMIN WHERE status = 'Active';
     
-    -- 為每個會員生成 1-5 筆儲值記錄
-    FOR member_rec IN 
-        SELECT member_id, join_date FROM MEMBER
-    LOOP
-        join_date_val := member_rec.join_date;
-        days_since_join := end_date - join_date_val;
-        
-        -- 每個會員生成 1-5 筆儲值記錄
-        FOR i IN 1..(1 + floor(random() * 5)::INTEGER)
-        LOOP
-            -- 隨機儲值日期（在會員加入日期之後，到 2025/12/5）
-            top_up_date_val := join_date_val + (floor(random() * days_since_join)::INTEGER || ' days')::INTERVAL;
-            
-            -- 隨機選擇管理員（確保索引不超出範圍）
-            IF array_length(admin_ids, 1) > 0 THEN
-                random_admin_id := admin_ids[1 + floor(random() * array_length(admin_ids, 1))::INTEGER];
-            ELSE
-                RAISE EXCEPTION '沒有可用的管理員';
-            END IF;
-            
-            -- 隨機儲值金額（100-10000 元）
-            -- 注意：會員等級應該依據單次儲值金額判定
-            top_up_amount := 100 + floor(random() * 9900)::INTEGER;
-            
-            INSERT INTO TOP_UP (member_id, admin_id, amount, top_up_date)
-            VALUES (member_rec.member_id, random_admin_id, top_up_amount, top_up_date_val)
-            ON CONFLICT DO NOTHING;
-        END LOOP;
-    END LOOP;
+    RAISE NOTICE '✅ 已生成預約記錄';
 END $$;
 
 -- ============================================
--- 11. 更新 MEMBER balance
+-- 8. 更新 BOOK_COPIES 狀態（根據預約）
 -- ============================================
--- 根據儲值記錄、借閱記錄和額外費用更新會員餘額
+-- 為 Active 預約分配 reserved 複本
+DO $$
+DECLARE
+    book_rec RECORD;
+    reservation_rec RECORD;
+    available_copy RECORD;
+    reserved_count INTEGER;
+BEGIN
+    -- 對每本書，統計有多少 Active 預約
+    FOR book_rec IN 
+        SELECT DISTINCT b.book_id
+        FROM BOOK b
+        JOIN RESERVATION_RECORD rr ON b.book_id = rr.book_id
+        JOIN RESERVATION r ON rr.reservation_id = r.reservation_id
+        WHERE r.status = 'Active'
+    LOOP
+        -- 統計這本書有多少 Active 預約
+        SELECT COUNT(DISTINCT r.reservation_id) INTO reserved_count
+        FROM RESERVATION r
+        JOIN RESERVATION_RECORD rr ON r.reservation_id = rr.reservation_id
+        WHERE rr.book_id = book_rec.book_id
+          AND r.status = 'Active';
+        
+        -- 從這本書的 Available 複本中，選擇 reserved_count 個設為 Reserved
+        FOR available_copy IN 
+            SELECT bc.book_id, bc.copies_serial
+            FROM BOOK_COPIES bc
+            WHERE bc.book_id = book_rec.book_id
+              AND bc.status = 'Available'
+            ORDER BY bc.copies_serial
+            LIMIT reserved_count
+        LOOP
+            UPDATE BOOK_COPIES
+            SET status = 'Reserved'
+            WHERE book_id = available_copy.book_id
+              AND copies_serial = available_copy.copies_serial;
+        END LOOP;
+    END LOOP;
+    
+    RAISE NOTICE '✅ BOOK_COPIES 狀態已根據預約更新';
+END $$;
+
+-- ============================================
+-- 9. 更新 MEMBER balance
+-- ============================================
+-- 根據儲值記錄、借閱費用和額外費用更新會員餘額
 -- balance = 總儲值金額 - 借閱費用 - 額外費用
--- 此步驟在所有借閱記錄和額外費用生成後執行
 DO $$
 DECLARE
     member_rec RECORD;
@@ -684,10 +591,9 @@ DECLARE
     loan_fee INTEGER;
     add_fee_amount INTEGER;
 BEGIN
-    FOR member_rec IN 
-        SELECT member_id FROM MEMBER
+    FOR member_rec IN SELECT member_id FROM MEMBER
     LOOP
-        -- 計算總儲值金額（所有 TOP_UP 的總和）
+        -- 計算總儲值金額
         SELECT COALESCE(SUM(amount), 0) INTO total_top_up
         FROM TOP_UP
         WHERE member_id = member_rec.member_id;
@@ -718,7 +624,66 @@ BEGIN
         WHERE member_id = member_rec.member_id;
     END LOOP;
     
-    RAISE NOTICE '✅ 會員餘額已更新（根據儲值記錄和借閱費用）';
+    RAISE NOTICE '✅ 會員餘額已更新（根據儲值記錄和所有費用）';
+END $$;
+
+-- ============================================
+-- 10. 驗證資料一致性
+-- ============================================
+DO $$
+DECLARE
+    lost_count INTEGER;
+    lost_fee_count INTEGER;
+    borrowed_count INTEGER;
+    active_loan_count INTEGER;
+    reserved_count INTEGER;
+    active_reservation_count INTEGER;
+    mismatch_count INTEGER;
+BEGIN
+    -- 驗證 Lost 狀態與遺失費的一致性
+    SELECT COUNT(*) INTO lost_count
+    FROM BOOK_COPIES
+    WHERE status = 'Lost';
+    
+    SELECT COUNT(DISTINCT (book_id, copies_serial)) INTO lost_fee_count
+    FROM ADD_FEE
+    WHERE type = 'lost';
+    
+    IF lost_count != lost_fee_count THEN
+        RAISE WARNING '⚠️ Lost 複本數量 (%) 與遺失費記錄數量 (%) 不一致', lost_count, lost_fee_count;
+    END IF;
+    
+    -- 驗證 Borrowed 狀態與未歸還借閱的一致性
+    SELECT COUNT(*) INTO borrowed_count
+    FROM BOOK_COPIES
+    WHERE status = 'Borrowed';
+    
+    SELECT COUNT(*) INTO active_loan_count
+    FROM LOAN_RECORD
+    WHERE return_date IS NULL;
+    
+    IF borrowed_count != active_loan_count THEN
+        RAISE WARNING '⚠️ Borrowed 複本數量 (%) 與未歸還借閱數量 (%) 不一致', borrowed_count, active_loan_count;
+    END IF;
+    
+    -- 驗證 Reserved 狀態與 Active 預約的一致性
+    SELECT COUNT(*) INTO reserved_count
+    FROM BOOK_COPIES
+    WHERE status = 'Reserved';
+    
+    SELECT COUNT(DISTINCT rr.book_id) INTO active_reservation_count
+    FROM RESERVATION r
+    JOIN RESERVATION_RECORD rr ON r.reservation_id = rr.reservation_id
+    WHERE r.status = 'Active';
+    
+    IF reserved_count != active_reservation_count THEN
+        RAISE WARNING '⚠️ Reserved 複本數量 (%) 與 Active 預約書籍數量 (%) 不一致', reserved_count, active_reservation_count;
+    END IF;
+    
+    RAISE NOTICE '✅ 資料一致性驗證完成';
+    RAISE NOTICE '  - Lost 複本: % 個，遺失費記錄: % 筆', lost_count, lost_fee_count;
+    RAISE NOTICE '  - Borrowed 複本: % 個，未歸還借閱: % 筆', borrowed_count, active_loan_count;
+    RAISE NOTICE '  - Reserved 複本: % 個，Active 預約書籍: % 本', reserved_count, active_reservation_count;
 END $$;
 
 -- ============================================
@@ -726,15 +691,25 @@ END $$;
 -- ============================================
 DO $$
 BEGIN
+    RAISE NOTICE '';
+    RAISE NOTICE '========================================';
     RAISE NOTICE '✅ 虛擬資料生成完成！';
+    RAISE NOTICE '========================================';
     RAISE NOTICE '已生成：';
     RAISE NOTICE '  - % 位店員', (SELECT COUNT(*) FROM ADMIN);
     RAISE NOTICE '  - % 位會員', (SELECT COUNT(*) FROM MEMBER);
-    RAISE NOTICE '  - % 筆儲值記錄', (SELECT COUNT(*) FROM TOP_UP);
     RAISE NOTICE '  - % 個書籍複本', (SELECT COUNT(*) FROM BOOK_COPIES);
+    RAISE NOTICE '  - % 筆儲值記錄', (SELECT COUNT(*) FROM TOP_UP);
     RAISE NOTICE '  - % 筆借閱交易', (SELECT COUNT(*) FROM BOOK_LOAN);
     RAISE NOTICE '  - % 筆借閱記錄', (SELECT COUNT(*) FROM LOAN_RECORD);
     RAISE NOTICE '  - % 筆額外費用', (SELECT COUNT(*) FROM ADD_FEE);
     RAISE NOTICE '  - % 筆預約記錄', (SELECT COUNT(*) FROM RESERVATION);
     RAISE NOTICE '  - % 筆預約書籍關聯', (SELECT COUNT(*) FROM RESERVATION_RECORD);
+    RAISE NOTICE '';
+    RAISE NOTICE 'BOOK_COPIES 狀態統計：';
+    RAISE NOTICE '  - Available: % 個', (SELECT COUNT(*) FROM BOOK_COPIES WHERE status = 'Available');
+    RAISE NOTICE '  - Reserved: % 個', (SELECT COUNT(*) FROM BOOK_COPIES WHERE status = 'Reserved');
+    RAISE NOTICE '  - Borrowed: % 個', (SELECT COUNT(*) FROM BOOK_COPIES WHERE status = 'Borrowed');
+    RAISE NOTICE '  - Lost: % 個', (SELECT COUNT(*) FROM BOOK_COPIES WHERE status = 'Lost');
+    RAISE NOTICE '========================================';
 END $$;

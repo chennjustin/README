@@ -221,7 +221,7 @@ export const adminApi = {
       this.headers(token)
     );
   },
-  getAvailableCopies(token: string, bookId: number): Promise<{
+  getAvailableCopies(token: string, bookId: number, memberId?: number): Promise<{
     book_id: number;
     book_name: string | null;
     copies: Array<{
@@ -231,8 +231,13 @@ export const adminApi = {
       rental_price: number;
     }>;
   }> {
+    const params = new URLSearchParams();
+    if (memberId) {
+      params.append('member_id', String(memberId));
+    }
+    const queryString = params.toString();
     return api.get(
-      `/api/admin/books/${bookId}/available-copies`,
+      `/api/admin/books/${bookId}/available-copies${queryString ? `?${queryString}` : ''}`,
       this.headers(token)
     );
   },
