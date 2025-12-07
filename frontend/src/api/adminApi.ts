@@ -11,6 +11,8 @@ import {
   FineCalculationResponse,
   BatchReturnItem,
   BatchReturnResponse,
+  BookSearchResult,
+  BookListResponse,
 } from '../types';
 
 export const adminApi = {
@@ -29,7 +31,18 @@ export const adminApi = {
   updateMemberStatus(token: string, memberId: number, status: string) {
     return api.patch(`/api/admin/members/${memberId}/status`, { status }, this.headers(token));
   },
-  createBook(token: string, payload: { name: string; author: string; publisher?: string; price: number; sequence_name?: string }) {
+  createBookWithCopies(
+    token: string,
+    payload: {
+      name: string;
+      author: string;
+      publisher?: string;
+      price: number;
+      category_id?: number;
+      copies_count: number;
+      sequence_name?: string;
+    }
+  ) {
     return api.post('/api/admin/books', payload, this.headers(token));
   },
   createCategory(token: string, name: string) {
@@ -92,12 +105,20 @@ export const adminApi = {
   getFeeTypes(token: string) {
     return api.get('/api/admin/fee-types', this.headers(token));
   },
-  searchMembers(token: string, params: { memberId?: string; name?: string }): Promise<MemberSearchResult[]> {
+  searchMembers(
+    token: string,
+    params: { memberId?: string; name?: string; page?: number; limit?: number }
+  ): Promise<{ members: MemberSearchResult[]; pagination: { page: number; limit: number; total: number; totalPages: number } }> {
     const queryParams = new URLSearchParams();
     if (params.memberId) queryParams.append('memberId', params.memberId);
     if (params.name) queryParams.append('name', params.name);
+    if (params.page) queryParams.append('page', params.page.toString());
+    if (params.limit) queryParams.append('limit', params.limit.toString());
     const qs = queryParams.toString() ? `?${queryParams.toString()}` : '';
-    return api.get<MemberSearchResult[]>(`/api/admin/members/search${qs}`, this.headers(token));
+    return api.get<{ members: MemberSearchResult[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>(
+      `/api/admin/members/search${qs}`,
+      this.headers(token)
+    );
   },
   getMemberDetail(token: string, memberId: number): Promise<MemberDetail> {
     return api.get<MemberDetail>(`/api/admin/members/${memberId}`, this.headers(token));
@@ -160,6 +181,43 @@ export const adminApi = {
     return api.post<BatchReturnResponse>(
       '/api/admin/loans/batch-return',
       { items },
+      this.headers(token)
+    );
+  },
+  searchBooks(
+    token: string,
+    params: { bookId?: string; name?: string; categoryId?: string; status?: string }
+  ): Promise<BookSearchResult[]> {
+    const queryParams = new URLSearchParams();
+    if (params.bookId) queryParams.append('bookId', params.bookId);
+    if (params.name) queryParams.append('name', params.name);
+    if (params.categoryId) queryParams.append('categoryId', params.categoryId);
+    if (params.status) queryParams.append('status', params.status);
+    const qs = queryParams.toString() ? `?${queryParams.toString()}` : '';
+    return api.get<BookSearchResult[]>(`/api/admin/books/search${qs}`, this.headers(token));
+  },
+  getBooksList(
+    token: string,
+    page: number = 1,
+    limit: number = 100
+  ): Promise<BookListResponse> {
+    const queryParams = new URLSearchParams();
+    queryParams.append('page', String(page));
+    queryParams.append('limit', String(limit));
+    return api.get<BookListResponse>(
+      `/api/admin/books?${queryParams.toString()}`,
+      this.headers(token)
+    );
+  },
+  updateBookCondition(
+    token: string,
+    bookId: number,
+    copiesSerial: number,
+    bookCondition: string
+  ) {
+    return api.patch(
+      `/api/admin/books/${bookId}/copies/${copiesSerial}`,
+      { book_condition: bookCondition },
       this.headers(token)
     );
   },

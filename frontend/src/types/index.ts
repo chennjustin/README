@@ -260,4 +260,45 @@ export interface BatchReturnResponse {
   results: BatchReturnResult[];
 }
 
+// Book management related types
+export interface BookCopyInfo {
+  copies_serial: number;
+  status: string;
+  book_condition: string;
+  purchase_date: string;
+  purchase_price: number;
+  rental_price: number;
+}
+
+export interface BookSearchResult {
+  book_id: number;
+  name: string;
+  author: string;
+  publisher?: string;
+  price: number;
+  copies: BookCopyInfo[];
+}
+
+export interface BookListResult {
+  book_id: number;
+  name: string;
+  author: string;
+  publisher?: string;
+  price: number;
+  total_copies: number;
+  available_count: number;
+  borrowed_count: number;
+  lost_count: number;
+}
+
+export interface BookListResponse {
+  books: BookListResult[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
 
