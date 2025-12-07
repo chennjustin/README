@@ -73,6 +73,30 @@ export interface LoanItem {
   add_fee_total: number;
 }
 
+export interface MemberHistoryLoanRecord {
+  loan_id: number;
+  book_id: number;
+  copies_serial: number;
+  book_name: string;
+  author: string;
+  publisher?: string;
+  date_out: string;
+  due_date: string;
+  return_date: string;
+  rental_fee: number;
+  renew_cnt: number;
+  book_condition: string;
+  add_fee_total: number;
+}
+
+export interface MemberHistoryLoan {
+  loan_id: number;
+  final_price: number;
+  loan_date: string;
+  return_date: string;
+  records: MemberHistoryLoanRecord[];
+}
+
 export interface TopBook {
   book_id: number;
   name: string;

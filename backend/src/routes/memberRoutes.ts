@@ -260,7 +260,7 @@ memberRouter.get(
   }
 );
 
-// M6: 歷史借閱紀錄
+// M6: 歷史借閱紀錄（以 Loan ID 分組）
 memberRouter.get(
   '/loans/history',
   async (req: Request, res: Response<ApiResponse<any>>, next: NextFunction) => {
@@ -273,39 +273,77 @@ memberRouter.get(
         });
       }
 
+      // 查詢以 loan_id 分組的歷史借閱記錄
       const sql = `
+        WITH loan_records_with_fees AS (
+          SELECT 
+            lr.loan_id,
+            lr.book_id,
+            lr.copies_serial,
+            lr.date_out,
+            lr.due_date,
+            lr.return_date,
+            lr.rental_fee,
+            lr.renew_cnt,
+            b.name AS book_name,
+            b.author,
+            b.publisher,
+            bc.book_condition,
+            COALESCE((
+              SELECT SUM(af.amount)
+              FROM ADD_FEE af
+              WHERE af.loan_id = lr.loan_id
+                AND af.book_id = lr.book_id
+                AND af.copies_serial = lr.copies_serial
+            ), 0) AS add_fee_total
+          FROM LOAN_RECORD lr
+          JOIN BOOK b ON lr.book_id = b.book_id
+          JOIN BOOK_COPIES bc ON lr.book_id = bc.book_id AND lr.copies_serial = bc.copies_serial
+          WHERE lr.return_date IS NOT NULL
+        )
         SELECT 
           bl.loan_id,
           bl.final_price,
-          lr.book_id,
-          lr.copies_serial,
-          lr.date_out,
-          lr.due_date,
-          lr.return_date,
-          lr.rental_fee,
-          lr.renew_cnt,
-          b.name AS book_name,
-          b.author,
-          b.publisher,
-          bc.book_condition,
-          COALESCE((
-            SELECT SUM(af.amount)
-            FROM ADD_FEE af
-            WHERE af.loan_id = lr.loan_id
-              AND af.book_id = lr.book_id
-              AND af.copies_serial = lr.copies_serial
-          ), 0) AS add_fee_total
+          MIN(lrf.date_out) AS loan_date,
+          MAX(lrf.return_date) AS return_date,
+          COALESCE(
+            json_agg(
+              jsonb_build_object(
+                'loan_id', lrf.loan_id,
+                'book_id', lrf.book_id,
+                'copies_serial', lrf.copies_serial,
+                'book_name', lrf.book_name,
+                'author', lrf.author,
+                'publisher', lrf.publisher,
+                'date_out', lrf.date_out,
+                'due_date', lrf.due_date,
+                'return_date', lrf.return_date,
+                'rental_fee', lrf.rental_fee,
+                'renew_cnt', lrf.renew_cnt,
+                'book_condition', lrf.book_condition,
+                'add_fee_total', lrf.add_fee_total
+              )
+              ORDER BY lrf.date_out
+            ) FILTER (WHERE lrf.loan_id IS NOT NULL),
+            '[]'::json
+          ) AS records
         FROM BOOK_LOAN bl
-        JOIN LOAN_RECORD lr ON bl.loan_id = lr.loan_id
-        JOIN BOOK b ON lr.book_id = b.book_id
-        JOIN BOOK_COPIES bc ON lr.book_id = bc.book_id AND lr.copies_serial = bc.copies_serial
+        LEFT JOIN loan_records_with_fees lrf ON bl.loan_id = lrf.loan_id
         WHERE bl.member_id = $1
-          AND lr.return_date IS NOT NULL
-        ORDER BY lr.return_date DESC, bl.loan_id DESC
+        GROUP BY bl.loan_id, bl.final_price
+        HAVING COUNT(lrf.loan_id) FILTER (WHERE lrf.loan_id IS NOT NULL) > 0
+        ORDER BY MAX(lrf.return_date) DESC, bl.loan_id DESC
       `;
 
       const result = await query(sql, [memberId]);
-      return res.json({ success: true, data: result.rows });
+      const loans = result.rows.map((row: any) => ({
+        loan_id: row.loan_id,
+        final_price: row.final_price,
+        loan_date: row.loan_date,
+        return_date: row.return_date,
+        records: row.records || [],
+      }));
+      return res.json({ success: true, data: loans });
     } catch (err) {
       next(err);
     }

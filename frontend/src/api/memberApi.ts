@@ -1,5 +1,5 @@
 import { api } from '../config/api';
-import { LoanItem, MemberLoginResult, MemberProfile, ReservationItem } from '../types';
+import { LoanItem, MemberHistoryLoan, MemberLoginResult, MemberProfile, ReservationItem } from '../types';
 
 export function memberHeaders(memberId: number | null): Record<string, string> {
   return memberId ? { 'x-member-id': String(memberId) } : {};
@@ -22,7 +22,7 @@ export const memberApi = {
     return api.get<LoanItem[]>('/api/member/loans/active', memberHeaders(memberId));
   },
   getHistoryLoans(memberId: number) {
-    return api.get<LoanItem[]>('/api/member/loans/history', memberHeaders(memberId));
+    return api.get<MemberHistoryLoan[]>('/api/member/loans/history', memberHeaders(memberId));
   },
   renewLoan(memberId: number, loanId: number, bookId: number, copiesSerial: number) {
     return api.post(
