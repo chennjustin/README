@@ -145,6 +145,7 @@ function AppShell() {
                   </NavLink>
                   <NavLink
                     to="/member/reservations"
+                    end
                     className={({ isActive }) =>
                       'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
                     }
