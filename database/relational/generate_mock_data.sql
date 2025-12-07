@@ -316,54 +316,109 @@ END $$;
 -- ============================================
 -- 6. 更新 BOOK_COPIES 狀態
 -- ============================================
--- 根據借閱記錄更新書籍複本狀態
--- 邏輯：
--- - 如果有進行中的借閱記錄（return_date IS NULL 且 due_date >= CURRENT_DATE）：狀態為 'Borrowed'
--- - 如果沒有進行中的借閱記錄：狀態為 'Available'（除非是 Lost）
--- - Lost 狀態：隨機分配（1% 機率），但不會覆蓋正在借閱中的
--- 注意：需要先處理 Borrowed，再處理 Available，避免狀態衝突
+-- 根據借閱記錄、預約記錄和額外費用更新書籍複本狀態
+-- 邏輯順序（重要！必須按順序處理）：
+-- 1. Lost: 根據 ADD_FEE type='lost' 來設定對應的複本
+-- 2. Borrowed: 根據 LOAN_RECORD return_date IS NULL（正在借閱中）
+-- 3. Reserved: 根據 RESERVATION status='Active' 和 RESERVATION_RECORD，為每本書分配對應數量的複本
+-- 4. Available: 剩餘的複本
+-- 
+-- 約束條件：
+-- - Lost 的數量 = 有遺失費（ADD_FEE type='lost'）的複本數量
+-- - Borrowed 的數量 = 正在借閱中（LOAN_RECORD return_date IS NULL）的複本數量
+-- - Reserved 的數量 = 每本書的 Active 預約人數（RESERVATION status='Active'）
+-- - 總數 = Available + Reserved + Borrowed + Lost
 DO $$
+DECLARE
+    book_rec RECORD;
+    reserved_count INTEGER;
+    available_copies RECORD;
+    copies_to_reserve INTEGER;
 BEGIN
-    -- 先將所有有進行中借閱記錄的複本設為 Borrowed（不包括 Lost）
-    UPDATE BOOK_COPIES bc
-    SET status = 'Borrowed'
-    WHERE EXISTS (
-        SELECT 1 
-        FROM LOAN_RECORD lr 
-        WHERE lr.book_id = bc.book_id 
-          AND lr.copies_serial = bc.copies_serial
-          AND lr.return_date IS NULL
-          AND lr.due_date >= CURRENT_DATE
-    )
-    AND bc.status != 'Lost'; -- 保留 Lost 狀態
-    
-    -- 將沒有進行中借閱記錄的複本設為 Available（不包括 Lost 和已經設為 Borrowed 的）
-    UPDATE BOOK_COPIES bc
-    SET status = 'Available'
-    WHERE bc.status != 'Lost'
-      AND bc.status != 'Borrowed'  -- 避免覆蓋剛剛設為 Borrowed 的
-      AND NOT EXISTS (
-          SELECT 1 
-          FROM LOAN_RECORD lr 
-          WHERE lr.book_id = bc.book_id 
-            AND lr.copies_serial = bc.copies_serial
-            AND lr.return_date IS NULL
-            AND lr.due_date >= CURRENT_DATE
-      );
-    
-    -- 隨機將 1% 的 Available 複本設為 Lost（不包括正在借閱中的）
+    -- 步驟 1: 將所有有遺失費的複本設為 Lost
     UPDATE BOOK_COPIES bc
     SET status = 'Lost'
-    WHERE bc.status = 'Available'
+    WHERE EXISTS (
+        SELECT 1 
+        FROM ADD_FEE af 
+        WHERE af.book_id = bc.book_id 
+          AND af.copies_serial = bc.copies_serial
+          AND af.type = 'lost'
+    );
+    
+    -- 步驟 2: 將所有正在借閱中的複本設為 Borrowed（不包括 Lost）
+    UPDATE BOOK_COPIES bc
+    SET status = 'Borrowed'
+    WHERE bc.status != 'Lost'
+      AND EXISTS (
+          SELECT 1 
+          FROM LOAN_RECORD lr 
+          WHERE lr.book_id = bc.book_id 
+            AND lr.copies_serial = bc.copies_serial
+            AND lr.return_date IS NULL
+      );
+    
+    -- 步驟 3: 為每本書分配 Reserved 狀態
+    -- 對於每本書，統計有多少 Active 預約，然後從 Available 複本中選擇對應數量設為 Reserved
+    FOR book_rec IN 
+        SELECT DISTINCT b.book_id
+        FROM BOOK b
+        JOIN RESERVATION_RECORD rr ON b.book_id = rr.book_id
+        JOIN RESERVATION r ON rr.reservation_id = r.reservation_id
+        WHERE r.status = 'Active'
+    LOOP
+        -- 統計這本書有多少 Active 預約
+        SELECT COUNT(DISTINCT r.reservation_id) INTO reserved_count
+        FROM RESERVATION r
+        JOIN RESERVATION_RECORD rr ON r.reservation_id = rr.reservation_id
+        WHERE rr.book_id = book_rec.book_id
+          AND r.status = 'Active';
+        
+        -- 從這本書的複本中，選擇 reserved_count 個設為 Reserved
+        -- 選擇那些不是 Lost、Borrowed 的複本（可能是初始的 'Available' 狀態）
+        copies_to_reserve := 0;
+        FOR available_copies IN 
+            SELECT bc.book_id, bc.copies_serial
+            FROM BOOK_COPIES bc
+            WHERE bc.book_id = book_rec.book_id
+              AND bc.status != 'Lost'
+              AND bc.status != 'Borrowed'
+              AND NOT EXISTS (
+                  SELECT 1 
+                  FROM LOAN_RECORD lr 
+                  WHERE lr.book_id = bc.book_id 
+                    AND lr.copies_serial = bc.copies_serial
+                    AND lr.return_date IS NULL
+              )
+            ORDER BY bc.copies_serial
+            LIMIT reserved_count
+        LOOP
+            UPDATE BOOK_COPIES
+            SET status = 'Reserved'
+            WHERE book_id = available_copies.book_id
+              AND copies_serial = available_copies.copies_serial;
+            
+            copies_to_reserve := copies_to_reserve + 1;
+        END LOOP;
+    END LOOP;
+    
+    -- 步驟 4: 將剩餘的複本設為 Available（不包括 Lost、Borrowed、Reserved）
+    UPDATE BOOK_COPIES bc
+    SET status = 'Available'
+    WHERE bc.status NOT IN ('Lost', 'Borrowed', 'Reserved')
       AND NOT EXISTS (
           SELECT 1 
           FROM LOAN_RECORD lr 
           WHERE lr.book_id = bc.book_id 
             AND lr.copies_serial = bc.copies_serial
             AND lr.return_date IS NULL
-            AND lr.due_date >= CURRENT_DATE
-      )
-      AND random() < 0.01;
+      );
+    
+    RAISE NOTICE '✅ BOOK_COPIES 狀態已更新';
+    RAISE NOTICE '  - Lost: % 個複本', (SELECT COUNT(*) FROM BOOK_COPIES WHERE status = 'Lost');
+    RAISE NOTICE '  - Borrowed: % 個複本', (SELECT COUNT(*) FROM BOOK_COPIES WHERE status = 'Borrowed');
+    RAISE NOTICE '  - Reserved: % 個複本', (SELECT COUNT(*) FROM BOOK_COPIES WHERE status = 'Reserved');
+    RAISE NOTICE '  - Available: % 個複本', (SELECT COUNT(*) FROM BOOK_COPIES WHERE status = 'Available');
 END $$;
 
 -- ============================================
@@ -463,6 +518,19 @@ BEGIN
                         loan_record_rec.copies_serial, 'damage_fair_to_poor', fee_amount, fee_date)
                 ON CONFLICT (loan_id, book_id, copies_serial, type) DO NOTHING;
             END IF;
+        END IF;
+        
+        -- 隨機生成遺失費（2% 機率，只在還書時產生）
+        -- 注意：遺失費 = 購買價格全額
+        IF random() < 0.02 AND loan_record_rec.return_date IS NOT NULL THEN
+            SELECT rate INTO fee_amount FROM FEE_TYPE WHERE type = 'lost';
+            fee_amount := floor(loan_record_rec.purchase_price * fee_amount)::INTEGER;
+            fee_date := loan_record_rec.return_date; -- 遺失費在還書時產生
+            
+            INSERT INTO ADD_FEE (loan_id, book_id, copies_serial, type, amount, date)
+            VALUES (loan_record_rec.loan_id, loan_record_rec.book_id, 
+                    loan_record_rec.copies_serial, 'lost', fee_amount, fee_date)
+            ON CONFLICT (loan_id, book_id, copies_serial, type) DO NOTHING;
         END IF;
     END LOOP;
 END $$;

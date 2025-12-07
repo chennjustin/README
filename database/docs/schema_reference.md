@@ -152,7 +152,7 @@
 |--------|------|------|------|
 | book_id | BIGINT | 書籍ID | PRIMARY KEY, FK → BOOK |
 | copies_serial | INTEGER | 複本序號 | PRIMARY KEY |
-| status | VARCHAR(15) | 狀態 | NOT NULL, 值：'Available', 'Borrowed', 'Damaged', 'Lost' |
+| status | VARCHAR(15) | 狀態 | NOT NULL, 值：'Available', 'Borrowed', 'Reserved', 'Lost' |
 | purchase_date | DATE | 採購日期 | NOT NULL |
 | purchase_price | INTEGER | 採購價格 | NOT NULL, > 0 |
 | book_condition | VARCHAR(20) | 書況 | NOT NULL, FK → CONDITION_DISCOUNT |

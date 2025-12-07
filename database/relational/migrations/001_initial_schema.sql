@@ -139,7 +139,7 @@ CREATE TABLE BOOK_COPIES (
     book_condition VARCHAR(20) NOT NULL,
     rental_price INTEGER NOT NULL,
     PRIMARY KEY (book_id, copies_serial),
-    CONSTRAINT chk_copies_status CHECK (status IN ('Available', 'Borrowed', 'Lost')),
+    CONSTRAINT chk_copies_status CHECK (status IN ('Available', 'Borrowed', 'Reserved', 'Lost')),
     CONSTRAINT chk_purchase_price CHECK (purchase_price > 0),
     CONSTRAINT chk_rental_price CHECK (rental_price > 0),
     CONSTRAINT fk_copies_book FOREIGN KEY (book_id) 

@@ -499,7 +499,7 @@ adminRouter.get(
 
       // Build SQL with optional status filter
       let sql: string;
-      if (status && ['Available', 'Borrowed', 'Lost'].includes(status)) {
+      if (status && ['Available', 'Borrowed', 'Reserved', 'Lost'].includes(status)) {
         // If status filter is provided, only show books with copies matching that status
         const statusParamIndex = params.length + 1;
         sql = `
