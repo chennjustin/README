@@ -21,9 +21,30 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setToken(parsed.token);
         setAdmin(parsed.admin);
       } catch {
-        // ignore
+        // ignore invalid stored data
+        window.localStorage.removeItem('adminAuth');
       }
     }
+  }, []);
+
+  // Listen for authentication expiration events
+  useEffect(() => {
+    const handleAuthExpired = (event: CustomEvent) => {
+      if (event.detail?.type === 'admin') {
+        setToken(null);
+        setAdmin(null);
+        // Redirect to login page if not already there
+        if (window.location.pathname.startsWith('/admin') && 
+            window.location.pathname !== '/admin/login') {
+          window.location.href = '/admin/login';
+        }
+      }
+    };
+
+    window.addEventListener('auth-expired', handleAuthExpired as EventListener);
+    return () => {
+      window.removeEventListener('auth-expired', handleAuthExpired as EventListener);
+    };
   }, []);
 
   // Use useCallback to stabilize the setAuth function reference

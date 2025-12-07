@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { booksApi } from '../../api/booksApi';
+import { memberApi } from '../../api/memberApi';
 import { useMember } from '../../context/MemberContext';
-import { BookDetail } from '../../types';
+import { BookDetail, MemberProfile } from '../../types';
 import { ReservationModal } from '../../components/ReservationModal';
 
 export function BookDetailPage() {
@@ -10,6 +11,7 @@ export function BookDetailPage() {
   const navigate = useNavigate();
   const { memberId } = useMember();
   const [book, setBook] = useState<BookDetail | null>(null);
+  const [memberProfile, setMemberProfile] = useState<MemberProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showReservationModal, setShowReservationModal] = useState(false);
@@ -35,6 +37,24 @@ export function BookDetailPage() {
     };
     load();
   }, [bookId, memberId]);
+
+  // Load member profile to check status
+  useEffect(() => {
+    if (!memberId) {
+      setMemberProfile(null);
+      return;
+    }
+    const loadProfile = async () => {
+      try {
+        const profile = await memberApi.getProfile(memberId);
+        setMemberProfile(profile);
+      } catch (e: any) {
+        // Silently fail - member profile loading is optional
+        setMemberProfile(null);
+      }
+    };
+    loadProfile();
+  }, [memberId]);
 
   return (
     <div className="card">
@@ -97,7 +117,27 @@ export function BookDetailPage() {
             </tbody>
           </table>
           <div className="spacer-md" />
-          {memberId && (
+          {memberId && memberProfile && memberProfile.status === 'Active' && (
+            <div className="book-detail-actions">
+              <button
+                className="btn btn-primary"
+                onClick={() => setShowReservationModal(true)}
+                disabled={!book || book.copies.every((c) => c.available_count === 0)}
+              >
+                預約書籍
+              </button>
+            </div>
+          )}
+          {memberId && memberProfile && memberProfile.status !== 'Active' && (
+            <div className="text-muted">
+              {memberProfile.status === 'Suspended' 
+                ? '該會員已停權，無法進行預約操作'
+                : memberProfile.status === 'Inactive'
+                ? '該會員已註銷帳號，無法進行預約操作'
+                : '會員狀態異常，無法進行預約操作'}
+            </div>
+          )}
+          {memberId && !memberProfile && (
             <div className="book-detail-actions">
               <button
                 className="btn btn-primary"

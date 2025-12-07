@@ -87,7 +87,12 @@ export function AdminMembersPage() {
       const results = await adminApi.searchMembers(token!, params);
       setSearchResults(results);
     } catch (e: any) {
-      setError(e.message);
+      // Handle authentication errors specially
+      if (e.name === 'AuthenticationError' || e.message?.includes('UNAUTHORIZED')) {
+        setError('登入已過期，請重新登入');
+      } else {
+        setError(e.message);
+      }
       setSearchResults([]);
     } finally {
       setSearchLoading(false);
@@ -105,7 +110,12 @@ export function AdminMembersPage() {
           const results = await adminApi.searchMembers(token, {});
           setSearchResults(results);
         } catch (e: any) {
-          setError(e.message);
+          // Handle authentication errors specially
+          if (e.name === 'AuthenticationError' || e.message?.includes('UNAUTHORIZED')) {
+            setError('登入已過期，請重新登入');
+          } else {
+            setError(e.message);
+          }
           setSearchResults([]);
         } finally {
           setSearchLoading(false);
@@ -293,6 +303,8 @@ export function AdminMembersPage() {
                       className="btn btn-secondary"
                       style={{ marginRight: '0.5rem', padding: '0.25rem 0.5rem', fontSize: '0.875rem' }}
                       onClick={() => handleTopUpClick(member)}
+                      disabled={member.status !== 'Active'}
+                      title={member.status !== 'Active' ? `會員狀態為 ${member.status}，無法進行儲值操作` : ''}
                     >
                       新增儲值
                     </button>

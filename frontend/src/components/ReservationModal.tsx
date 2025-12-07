@@ -57,6 +57,18 @@ export function ReservationModal({
   const handleConfirm = async () => {
     if (!memberProfile) return;
 
+    // Check member status first
+    if (memberProfile.status !== 'Active') {
+      if (memberProfile.status === 'Suspended') {
+        setError('該會員已停權，無法進行預約操作');
+      } else if (memberProfile.status === 'Inactive') {
+        setError('該會員已註銷帳號，無法進行預約操作');
+      } else {
+        setError('會員狀態異常，無法進行預約操作');
+      }
+      return;
+    }
+
     // 檢查餘額
     if (memberProfile.balance < estimatedRental) {
       setError(`餘額不足！目前餘額：${memberProfile.balance} 元，預估租金：${estimatedRental} 元`);
@@ -97,41 +109,60 @@ export function ReservationModal({
 
           {memberProfile && (
             <>
-              <div className="reservation-detail">
-                <div className="reservation-detail-row">
-                  <span className="reservation-detail-label">書名：</span>
-                  <span className="reservation-detail-value">{bookName}</span>
-                </div>
-                <div className="reservation-detail-row">
-                  <span className="reservation-detail-label">預估租金：</span>
-                  <span className="reservation-detail-value">${estimatedRental} 元</span>
-                </div>
-                <div className="reservation-detail-row">
-                  <span className="reservation-detail-label">領取日期：</span>
-                  <span className="reservation-detail-value">{pickupDateStr}</span>
-                </div>
-                <div className="reservation-detail-row">
-                  <span className="reservation-detail-label">目前餘額：</span>
-                  <span className={`reservation-detail-value ${memberProfile.balance < estimatedRental ? 'error-text' : ''}`}>
-                    ${memberProfile.balance} 元
-                  </span>
-                </div>
-              </div>
-
-              {memberProfile.balance < estimatedRental && (
+              {memberProfile.status !== 'Active' ? (
                 <div className="reservation-warning">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
                     <line x1="12" y1="9" x2="12" y2="13"></line>
                     <line x1="12" y1="17" x2="12.01" y2="17"></line>
                   </svg>
-                  <span>餘額不足，無法預約。請先儲值。</span>
+                  <span>
+                    {memberProfile.status === 'Suspended'
+                      ? '該會員已停權，無法進行預約操作'
+                      : memberProfile.status === 'Inactive'
+                      ? '該會員已註銷帳號，無法進行預約操作'
+                      : '會員狀態異常，無法進行預約操作'}
+                  </span>
                 </div>
-              )}
+              ) : (
+                <>
+                  <div className="reservation-detail">
+                    <div className="reservation-detail-row">
+                      <span className="reservation-detail-label">書名：</span>
+                      <span className="reservation-detail-value">{bookName}</span>
+                    </div>
+                    <div className="reservation-detail-row">
+                      <span className="reservation-detail-label">預估租金：</span>
+                      <span className="reservation-detail-value">${estimatedRental} 元</span>
+                    </div>
+                    <div className="reservation-detail-row">
+                      <span className="reservation-detail-label">領取日期：</span>
+                      <span className="reservation-detail-value">{pickupDateStr}</span>
+                    </div>
+                    <div className="reservation-detail-row">
+                      <span className="reservation-detail-label">目前餘額：</span>
+                      <span className={`reservation-detail-value ${memberProfile.balance < estimatedRental ? 'error-text' : ''}`}>
+                        ${memberProfile.balance} 元
+                      </span>
+                    </div>
+                  </div>
 
-              <div className="reservation-note">
-                <p>注意：預約時不會扣款，實際扣款將在店面租借時進行。</p>
-              </div>
+                  {memberProfile.balance < estimatedRental && (
+                    <div className="reservation-warning">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                      </svg>
+                      <span>餘額不足，無法預約。請先儲值。</span>
+                    </div>
+                  )}
+
+                  <div className="reservation-note">
+                    <p>注意：預約時不會扣款，實際扣款將在店面租借時進行。</p>
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>
@@ -143,7 +174,7 @@ export function ReservationModal({
           <button
             className="btn btn-primary"
             onClick={handleConfirm}
-            disabled={submitting || loading || !memberProfile || memberProfile.balance < estimatedRental}
+            disabled={submitting || loading || !memberProfile || memberProfile.status !== 'Active' || memberProfile.balance < estimatedRental}
           >
             {submitting ? '處理中...' : '確認預約'}
           </button>
