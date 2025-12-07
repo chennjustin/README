@@ -15,6 +15,9 @@ export function AdminMembersPage() {
   const [searchMemberId, setSearchMemberId] = useState('');
   const [searchName, setSearchName] = useState('');
   const [searchResults, setSearchResults] = useState<MemberSearchResult[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalMembers, setTotalMembers] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -25,6 +28,7 @@ export function AdminMembersPage() {
   const [topUpAmount, setTopUpAmount] = useState(0);
   const [newStatus, setNewStatus] = useState('Active');
   const [actionLoading, setActionLoading] = useState(false);
+  const pageLimit = 100;
 
   const requireToken = () => {
     if (!token) {
@@ -72,20 +76,26 @@ export function AdminMembersPage() {
     }
   };
 
-  const onSearch = async () => {
+  const onSearch = async (page: number = 1) => {
     if (!requireToken()) return;
     setSearchLoading(true);
     setError(null);
     try {
-      const params: { memberId?: string; name?: string } = {};
+      const params: { memberId?: string; name?: string; page?: number; limit?: number } = {
+        page,
+        limit: pageLimit,
+      };
       if (searchMemberId.trim()) {
         params.memberId = searchMemberId.trim();
       }
       if (searchName.trim()) {
         params.name = searchName.trim();
       }
-      const results = await adminApi.searchMembers(token!, params);
-      setSearchResults(results);
+      const result = await adminApi.searchMembers(token!, params);
+      setSearchResults(result.members);
+      setCurrentPage(result.pagination.page);
+      setTotalPages(result.pagination.totalPages);
+      setTotalMembers(result.pagination.total);
     } catch (e: any) {
       // Handle authentication errors specially
       if (e.name === 'AuthenticationError' || e.message?.includes('UNAUTHORIZED')) {
@@ -94,6 +104,9 @@ export function AdminMembersPage() {
         setError(e.message);
       }
       setSearchResults([]);
+      setCurrentPage(1);
+      setTotalPages(1);
+      setTotalMembers(0);
     } finally {
       setSearchLoading(false);
     }
@@ -102,27 +115,9 @@ export function AdminMembersPage() {
   // Auto-load all members on page load
   useEffect(() => {
     if (token) {
-      const loadAllMembers = async () => {
-        if (!token) return;
-        setSearchLoading(true);
-        setError(null);
-        try {
-          const results = await adminApi.searchMembers(token, {});
-          setSearchResults(results);
-        } catch (e: any) {
-          // Handle authentication errors specially
-          if (e.name === 'AuthenticationError' || e.message?.includes('UNAUTHORIZED')) {
-            setError('登入已過期，請重新登入');
-          } else {
-            setError(e.message);
-          }
-          setSearchResults([]);
-        } finally {
-          setSearchLoading(false);
-        }
-      };
-      loadAllMembers();
+      onSearch(1);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   const handleTopUpClick = (member: MemberSearchResult) => {
@@ -164,7 +159,7 @@ export function AdminMembersPage() {
       await adminApi.createTopUp(token!, selectedMember.member_id, topUpAmount);
       setMessage(`會員 ${selectedMember.name} 儲值成功。`);
       closeTopUpModal();
-      await onSearch(); // Reload member list
+      await onSearch(currentPage); // Reload member list
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -183,7 +178,7 @@ export function AdminMembersPage() {
       await adminApi.updateMemberStatus(token!, selectedMember.member_id, newStatus);
       setMessage(`會員 ${selectedMember.name} 狀態更新成功。`);
       closeStatusModal();
-      await onSearch(); // Reload member list
+      await onSearch(currentPage); // Reload member list
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -262,7 +257,7 @@ export function AdminMembersPage() {
             />
           </div>
         </div>
-        <button className="btn btn-primary" onClick={onSearch} disabled={searchLoading}>
+        <button className="btn btn-primary" onClick={() => onSearch(1)} disabled={searchLoading}>
           搜尋
         </button>
         {error && <div className="error-text">{error}</div>}
@@ -271,7 +266,10 @@ export function AdminMembersPage() {
       <div className="card">
         <div className="card-title">會員列表</div>
         {searchLoading && <div className="text-muted">載入中...</div>}
-        {!searchLoading && searchResults.length === 0 && (searchMemberId !== '' || searchName !== '') && (
+        {!searchLoading && searchResults.length === 0 && totalMembers === 0 && (
+          <div className="text-muted">目前沒有會員資料。</div>
+        )}
+        {!searchLoading && searchResults.length === 0 && totalMembers > 0 && (searchMemberId !== '' || searchName !== '') && (
           <div className="text-muted">目前沒有符合條件的會員。</div>
         )}
         {searchResults.length > 0 && (
@@ -320,6 +318,34 @@ export function AdminMembersPage() {
               ))}
             </tbody>
           </table>
+        )}
+        {!searchLoading && searchResults.length > 0 && (
+          <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="text-muted">
+              顯示第 {((currentPage - 1) * pageLimit) + 1} - {Math.min(currentPage * pageLimit, totalMembers)} 筆，共 {totalMembers} 筆
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => onSearch(currentPage - 1)}
+                disabled={currentPage <= 1 || searchLoading}
+                style={{ padding: '0.5rem 1rem' }}
+              >
+                上一頁
+              </button>
+              <span style={{ padding: '0 0.5rem' }}>
+                第 {currentPage} / {totalPages} 頁
+              </span>
+              <button
+                className="btn btn-secondary"
+                onClick={() => onSearch(currentPage + 1)}
+                disabled={currentPage >= totalPages || searchLoading}
+                style={{ padding: '0.5rem 1rem' }}
+              >
+                下一頁
+              </button>
+            </div>
+          </div>
         )}
       </div>
 
