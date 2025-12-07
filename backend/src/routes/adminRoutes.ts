@@ -949,6 +949,50 @@ adminRouter.patch(
   }
 );
 
+// A5: 取得書籍的可用複本列表
+adminRouter.get(
+  '/books/:bookId/available-copies',
+  requireAdmin,
+  async (req: AuthedRequest, res: Response<ApiResponse<any>>, next: NextFunction) => {
+    try {
+      const bookId = Number(req.params.bookId);
+
+      if (!Number.isFinite(bookId)) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'INVALID_INPUT', message: 'book_id 必須為有效數字' },
+        });
+      }
+
+      // Query available copies for the book
+      const sql = `
+        SELECT 
+          bc.copies_serial,
+          bc.status,
+          bc.book_condition,
+          bc.rental_price,
+          b.name AS book_name
+        FROM BOOK_COPIES bc
+        JOIN BOOK b ON bc.book_id = b.book_id
+        WHERE bc.book_id = $1 AND bc.status = 'Available'
+        ORDER BY bc.copies_serial ASC
+      `;
+      const result = await query(sql, [bookId]);
+
+      return res.json({
+        success: true,
+        data: {
+          book_id: bookId,
+          book_name: result.rows.length > 0 ? result.rows[0].book_name : null,
+          copies: result.rows,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 // A5: 櫃檯借書預覽（計算租金、驗證狀態）
 adminRouter.get(
   '/borrow/preview',

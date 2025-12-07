@@ -30,6 +30,14 @@ export function AdminBorrowPage() {
   const [items, setItems] = useState<BorrowItem[]>([]);
   const [bookIdInput, setBookIdInput] = useState('');
   const [copySerialInput, setCopySerialInput] = useState('');
+  const [availableCopies, setAvailableCopies] = useState<Array<{
+    copies_serial: number;
+    status: string;
+    book_condition: string;
+    rental_price: number;
+  }>>([]);
+  const [loadingCopies, setLoadingCopies] = useState(false);
+  const [selectedBookName, setSelectedBookName] = useState<string | null>(null);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -37,6 +45,13 @@ export function AdminBorrowPage() {
   const [validating, setValidating] = useState(false);
   const [reservationData, setReservationData] = useState<ReservationData | null>(null);
   const [reservationCopiesInput, setReservationCopiesInput] = useState<Record<number, string>>({});
+  const [reservationAvailableCopies, setReservationAvailableCopies] = useState<Record<number, Array<{
+    copies_serial: number;
+    status: string;
+    book_condition: string;
+    rental_price: number;
+  }>>>({});
+  const [loadingReservationCopies, setLoadingReservationCopies] = useState<Record<number, boolean>>({});
 
   // Parse error message and extract error code
   const parseError = (error: any): { code: string; message: string } => {
@@ -63,6 +78,31 @@ export function AdminBorrowPage() {
     return errorMap[errorCode] || defaultMessage;
   };
 
+  // Load available copies for reservation books
+  const loadReservationCopies = async (bookId: number) => {
+    if (!token) {
+      return;
+    }
+
+    setLoadingReservationCopies((prev) => ({ ...prev, [bookId]: true }));
+
+    try {
+      const result = await adminApi.getAvailableCopies(token, bookId);
+      setReservationAvailableCopies((prev) => ({
+        ...prev,
+        [bookId]: result.copies || [],
+      }));
+    } catch (e: any) {
+      // Silently fail for reservation copies loading
+      setReservationAvailableCopies((prev) => ({
+        ...prev,
+        [bookId]: [],
+      }));
+    } finally {
+      setLoadingReservationCopies((prev) => ({ ...prev, [bookId]: false }));
+    }
+  };
+
   // Handle reservation data from navigation
   useEffect(() => {
     const state = location.state as ReservationData | null;
@@ -71,7 +111,14 @@ export function AdminBorrowPage() {
       setMemberId(String(state.member_id));
       // Auto-confirm member if from reservation
       if (token) {
-        confirmMember(String(state.member_id));
+        confirmMember(String(state.member_id)).then(() => {
+          // After member is confirmed, load available copies for each book
+          if (token && state.books) {
+            state.books.forEach((book) => {
+              loadReservationCopies(book.book_id);
+            });
+          }
+        });
       }
       // Clear location state to prevent re-processing on re-render
       window.history.replaceState({}, document.title);
@@ -81,7 +128,7 @@ export function AdminBorrowPage() {
   }, [location.state]);
 
   // Confirm member function
-  const confirmMember = async (memberIdValue?: string) => {
+  const confirmMember = async (memberIdValue?: string): Promise<void> => {
     const mid = memberIdValue || memberId;
     if (!mid.trim()) {
       setError('請輸入 Member ID。');
@@ -118,6 +165,46 @@ export function AdminBorrowPage() {
     }
   };
 
+  // Fetch available copies when book_id changes
+  const handleBookIdChange = async (value: string) => {
+    setBookIdInput(value);
+    setCopySerialInput(''); // Clear copies_serial when book_id changes
+    setAvailableCopies([]);
+    setSelectedBookName(null);
+
+    if (!value.trim()) {
+      return;
+    }
+
+    const bookId = Number(value);
+    if (!Number.isFinite(bookId) || bookId <= 0) {
+      return;
+    }
+
+    if (!token) {
+      return;
+    }
+
+    setLoadingCopies(true);
+    setError(null);
+
+    try {
+      const result = await adminApi.getAvailableCopies(token, bookId);
+      setAvailableCopies(result.copies || []);
+      setSelectedBookName(result.book_name);
+      if (result.copies.length === 0) {
+        setError('此書籍目前沒有可用的複本。');
+      }
+    } catch (e: any) {
+      const { code: errorCode, message: errorMsg } = parseError(e);
+      setError(getErrorMessage(errorCode, errorMsg));
+      setAvailableCopies([]);
+      setSelectedBookName(null);
+    } finally {
+      setLoadingCopies(false);
+    }
+  };
+
   const addItem = async () => {
     // Validate member is confirmed
     if (!memberDetail) {
@@ -130,7 +217,7 @@ export function AdminBorrowPage() {
       return;
     }
     if (!copySerialInput.trim()) {
-      setError('請輸入 Copies Serial。');
+      setError('請選擇 Copies Serial。');
       return;
     }
 
@@ -423,58 +510,71 @@ export function AdminBorrowPage() {
                     </div>
                     {!isBookInList && (
                       <>
-                        <div style={{ marginTop: '0.5rem', fontSize: '0.9rem', color: '#666' }}>
-                          請輸入 Copies Serial 後點擊「加入列表」
-                        </div>
-                        <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <input
-                            className="form-input"
-                            type="number"
-                            placeholder="Copies Serial"
-                            value={reservationCopiesInput[book.book_id] || ''}
-                            onChange={(e) => {
-                              setReservationCopiesInput({
-                                ...reservationCopiesInput,
-                                [book.book_id]: e.target.value,
-                              });
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                const serial = Number(reservationCopiesInput[book.book_id]);
-                                if (Number.isFinite(serial)) {
-                                  addReservationBook(book.book_id, serial);
+                        {loadingReservationCopies[book.book_id] && (
+                          <div style={{ marginTop: '0.5rem', fontSize: '0.9rem', color: '#666' }}>
+                            載入可用複本中...
+                          </div>
+                        )}
+                        {!loadingReservationCopies[book.book_id] && reservationAvailableCopies[book.book_id] && reservationAvailableCopies[book.book_id].length === 0 && (
+                          <div style={{ marginTop: '0.5rem', fontSize: '0.9rem', color: '#ef4444' }}>
+                            此書籍目前沒有可用的複本
+                          </div>
+                        )}
+                        {!loadingReservationCopies[book.book_id] && reservationAvailableCopies[book.book_id] && reservationAvailableCopies[book.book_id].length > 0 && (
+                          <>
+                            <div style={{ marginTop: '0.5rem', fontSize: '0.9rem', color: '#666' }}>
+                              請選擇 Copies Serial 後點擊「加入列表」
+                            </div>
+                            <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <select
+                                className="form-input"
+                                value={reservationCopiesInput[book.book_id] || ''}
+                                onChange={(e) => {
                                   setReservationCopiesInput({
                                     ...reservationCopiesInput,
-                                    [book.book_id]: '',
+                                    [book.book_id]: e.target.value,
                                   });
-                                }
-                              }
-                            }}
-                            disabled={loading || validating || addingItem || !memberDetail}
-                            style={{ width: '150px' }}
-                          />
-                          <button
-                            type="button"
-                            className="btn btn-secondary"
-                            onClick={() => {
-                              const serial = Number(reservationCopiesInput[book.book_id]);
-                              if (Number.isFinite(serial)) {
-                                addReservationBook(book.book_id, serial);
-                                setReservationCopiesInput({
-                                  ...reservationCopiesInput,
-                                  [book.book_id]: '',
-                                });
-                              } else {
-                                setError('請輸入有效的 Copies Serial。');
-                              }
-                            }}
-                            disabled={loading || validating || addingItem || !memberDetail}
-                            style={{ padding: '4px 12px', fontSize: '12px' }}
-                          >
-                            {addingItem ? '加入中...' : '加入列表'}
-                          </button>
-                        </div>
+                                }}
+                                disabled={loading || validating || addingItem || !memberDetail}
+                                style={{ 
+                                  width: '200px',
+                                  padding: '0.5rem',
+                                  borderRadius: '4px',
+                                  border: '1px solid #d1d5db',
+                                  backgroundColor: '#fff',
+                                  fontSize: '1rem'
+                                }}
+                              >
+                                <option value="">請選擇副本序號</option>
+                                {reservationAvailableCopies[book.book_id].map((copy) => (
+                                  <option key={copy.copies_serial} value={copy.copies_serial}>
+                                    {copy.copies_serial} (書況: {copy.book_condition}, 租金: {copy.rental_price})
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                className="btn btn-secondary"
+                                onClick={() => {
+                                  const serial = Number(reservationCopiesInput[book.book_id]);
+                                  if (Number.isFinite(serial)) {
+                                    addReservationBook(book.book_id, serial);
+                                    setReservationCopiesInput({
+                                      ...reservationCopiesInput,
+                                      [book.book_id]: '',
+                                    });
+                                  } else {
+                                    setError('請選擇有效的 Copies Serial。');
+                                  }
+                                }}
+                                disabled={loading || validating || addingItem || !memberDetail || !reservationCopiesInput[book.book_id]}
+                                style={{ padding: '4px 12px', fontSize: '12px' }}
+                              >
+                                {addingItem ? '加入中...' : '加入列表'}
+                              </button>
+                            </div>
+                          </>
+                        )}
                       </>
                     )}
                     {isBookInList && (
@@ -489,41 +589,68 @@ export function AdminBorrowPage() {
           </div>
         )}
 
-        {/* Book input section - only show when NOT from reservation and member is confirmed */}
-        {!reservationData && memberDetail && (
-          <div className="form-row">
-            <div className="form-field">
-              <label className="form-label">Book ID</label>
-              <input
-                className="form-input"
-                value={bookIdInput}
-                onChange={(e) => setBookIdInput(e.target.value)}
-                disabled={loading || validating || addingItem || !memberDetail}
-                placeholder="請輸入書籍 ID"
-              />
-            </div>
-            <div className="form-field">
-              <label className="form-label">Copies Serial</label>
-              <input
-                className="form-input"
-                value={copySerialInput}
-                onChange={(e) => setCopySerialInput(e.target.value)}
-                disabled={loading || validating || addingItem || !memberDetail}
-                placeholder="請輸入副本序號"
-              />
-            </div>
-            <div className="form-field" style={{ justifyContent: 'flex-end' }}>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={addItem}
-                disabled={loading || validating || addingItem || !memberDetail}
-              >
-                {addingItem ? '加入中...' : '加入列表'}
-              </button>
-            </div>
-          </div>
-        )}
+         {/* Book input section - only show when NOT from reservation and member is confirmed */}
+         {!reservationData && memberDetail && (
+           <div className="form-row">
+             <div className="form-field">
+               <label className="form-label">Book ID</label>
+               <input
+                 className="form-input"
+                 value={bookIdInput}
+                 onChange={(e) => handleBookIdChange(e.target.value)}
+                 disabled={loading || validating || addingItem || loadingCopies || !memberDetail}
+                 placeholder="請輸入書籍 ID"
+               />
+               {loadingCopies && (
+                 <div style={{ fontSize: '0.875rem', color: '#666', marginTop: '0.25rem' }}>
+                   載入中...
+                 </div>
+               )}
+               {selectedBookName && !loadingCopies && (
+                 <div style={{ fontSize: '0.875rem', color: '#059669', marginTop: '0.25rem' }}>
+                   書名: {selectedBookName}
+                 </div>
+               )}
+             </div>
+             {availableCopies.length > 0 && (
+               <div className="form-field">
+                 <label className="form-label">Copies Serial</label>
+                 <select
+                   className="form-input"
+                   value={copySerialInput}
+                   onChange={(e) => setCopySerialInput(e.target.value)}
+                   disabled={loading || validating || addingItem || !memberDetail}
+                   style={{ 
+                     padding: '0.5rem',
+                     borderRadius: '4px',
+                     border: '1px solid #d1d5db',
+                     backgroundColor: '#fff',
+                     fontSize: '1rem'
+                   }}
+                 >
+                   <option value="">請選擇副本序號</option>
+                   {availableCopies.map((copy) => (
+                     <option key={copy.copies_serial} value={copy.copies_serial}>
+                       {copy.copies_serial} (書況: {copy.book_condition}, 租金: {copy.rental_price})
+                     </option>
+                   ))}
+                 </select>
+               </div>
+             )}
+             {availableCopies.length > 0 && (
+               <div className="form-field" style={{ justifyContent: 'flex-end' }}>
+                 <button
+                   type="button"
+                   className="btn btn-secondary"
+                   onClick={addItem}
+                   disabled={loading || validating || addingItem || !memberDetail || !copySerialInput}
+                 >
+                   {addingItem ? '加入中...' : '加入列表'}
+                 </button>
+               </div>
+             )}
+           </div>
+         )}
         {items.length > 0 && (
           <>
             <table className="table">
