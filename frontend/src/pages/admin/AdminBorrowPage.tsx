@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { adminApi } from '../../api/adminApi';
 import { useAdmin } from '../../context/AdminContext';
-import { BorrowPreview } from '../../types';
+import { BorrowPreview, MemberDetail } from '../../types';
 
 interface BorrowItem extends BorrowPreview {
   // Extends BorrowPreview with all required fields
@@ -25,6 +25,8 @@ export function AdminBorrowPage() {
   const { token } = useAdmin();
   const location = useLocation();
   const [memberId, setMemberId] = useState('');
+  const [memberDetail, setMemberDetail] = useState<MemberDetail | null>(null);
+  const [confirmingMember, setConfirmingMember] = useState(false);
   const [items, setItems] = useState<BorrowItem[]>([]);
   const [bookIdInput, setBookIdInput] = useState('');
   const [copySerialInput, setCopySerialInput] = useState('');
@@ -67,6 +69,10 @@ export function AdminBorrowPage() {
     if (state?.fromReservation) {
       setReservationData(state);
       setMemberId(String(state.member_id));
+      // Auto-confirm member if from reservation
+      if (token) {
+        confirmMember(String(state.member_id));
+      }
       // Clear location state to prevent re-processing on re-render
       window.history.replaceState({}, document.title);
       // Debug: log reservation data
@@ -74,12 +80,51 @@ export function AdminBorrowPage() {
     }
   }, [location.state]);
 
-  const addItem = async () => {
-    // Validate all inputs are provided
-    if (!memberId.trim()) {
+  // Confirm member function
+  const confirmMember = async (memberIdValue?: string) => {
+    const mid = memberIdValue || memberId;
+    if (!mid.trim()) {
       setError('請輸入 Member ID。');
       return;
     }
+
+    const midNum = Number(mid);
+    if (!Number.isFinite(midNum) || midNum <= 0) {
+      setError('Member ID 必須為有效的正整數。');
+      return;
+    }
+
+    if (!token) {
+      setError('請先在管理端登入頁登入。');
+      return;
+    }
+
+    setConfirmingMember(true);
+    setError(null);
+    setMemberDetail(null);
+    setItems([]); // Clear items when changing member
+
+    try {
+      const detail = await adminApi.getMemberDetail(token, midNum);
+      setMemberDetail(detail);
+      setMemberId(String(midNum));
+      setError(null);
+    } catch (e: any) {
+      const { code: errorCode, message: errorMsg } = parseError(e);
+      setError(getErrorMessage(errorCode, errorMsg));
+      setMemberDetail(null);
+    } finally {
+      setConfirmingMember(false);
+    }
+  };
+
+  const addItem = async () => {
+    // Validate member is confirmed
+    if (!memberDetail) {
+      setError('請先確認會員。');
+      return;
+    }
+
     if (!bookIdInput.trim()) {
       setError('請輸入 Book ID。');
       return;
@@ -90,11 +135,11 @@ export function AdminBorrowPage() {
     }
 
     // Validate numeric inputs
-    const mid = Number(memberId);
+    const mid = memberDetail.member_id;
     const b = Number(bookIdInput);
     const c = Number(copySerialInput);
-    if (!Number.isFinite(mid) || !Number.isFinite(b) || !Number.isFinite(c)) {
-      setError('Member ID、Book ID、Copies Serial 必須為有效數字。');
+    if (!Number.isFinite(b) || !Number.isFinite(c)) {
+      setError('Book ID、Copies Serial 必須為有效數字。');
       return;
     }
 
@@ -135,15 +180,11 @@ export function AdminBorrowPage() {
 
   // Revalidate all items before submission
   const revalidateAllItems = async (): Promise<boolean> => {
-    if (!token || items.length === 0) {
+    if (!token || items.length === 0 || !memberDetail) {
       return false;
     }
 
-    const mid = Number(memberId);
-    if (!Number.isFinite(mid)) {
-      setError('請輸入有效的 member_id。');
-      return false;
-    }
+    const mid = memberDetail.member_id;
 
     setValidating(true);
     const newItems: BorrowItem[] = [];
@@ -184,11 +225,15 @@ export function AdminBorrowPage() {
       setError('請先在管理端登入頁登入。');
       return;
     }
-    const mid = Number(memberId);
-    if (!Number.isFinite(mid) || items.length === 0) {
-      setError('請輸入有效的 member_id 並至少一筆借書項目。');
+    if (!memberDetail) {
+      setError('請先確認會員。');
       return;
     }
+    if (items.length === 0) {
+      setError('請至少添加一筆借書項目。');
+      return;
+    }
+    const mid = memberDetail.member_id;
 
     // Revalidate all items before submission
     const isValid = await revalidateAllItems();
@@ -224,11 +269,13 @@ export function AdminBorrowPage() {
       setResult(res);
       // Clear the list after successful submission
       setItems([]);
-      setMemberId('');
+      setBookIdInput('');
+      setCopySerialInput('');
       // Clear reservation data after successful borrow
       if (reservationData) {
         setReservationData(null);
       }
+      // Note: Keep memberDetail so admin can continue adding books for the same member
     } catch (e: any) {
       const { code: errorCode, message: errorMsg } = parseError(e);
       setError(getErrorMessage(errorCode, errorMsg));
@@ -239,16 +286,17 @@ export function AdminBorrowPage() {
 
   // Handle adding book from reservation
   const addReservationBook = async (bookId: number, copiesSerial: number) => {
-    if (!token || !memberId.trim()) {
-      setError('請確認 Member ID 已填入。');
+    if (!memberDetail) {
+      setError('請先確認會員。');
       return;
     }
 
-    const mid = Number(memberId);
-    if (!Number.isFinite(mid)) {
-      setError('請輸入有效的 Member ID。');
+    if (!token) {
+      setError('請先在管理端登入頁登入。');
       return;
     }
+
+    const mid = memberDetail.member_id;
 
     // Check if item already exists in list
     const exists = items.some(
@@ -285,132 +333,197 @@ export function AdminBorrowPage() {
     <div className="card">
       <div className="card-title">櫃檯借書</div>
       
-      {/* Reservation books section */}
-      {reservationData && (
-        <div style={{ marginBottom: '2rem', padding: '1rem', backgroundColor: '#f9f9f9', borderRadius: '4px', border: '1px solid #e0e0e0' }}>
-          <h3 style={{ marginBottom: '1rem', fontSize: '1.1rem', fontWeight: '600' }}>
-            預約書籍（會員：{reservationData.member_name}，Member ID: {reservationData.member_id}）
-          </h3>
-          {reservationData.books.map((book) => (
-            <div
-              key={book.book_id}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '0.75rem',
-                marginBottom: '0.5rem',
-                backgroundColor: '#fff',
-                border: '1px solid #e0e0e0',
-                borderRadius: '4px',
-              }}
-            >
-              <div style={{ flex: 1 }}>
-                <div>
-                  <strong>Book ID:</strong> {book.book_id} | <strong>書名:</strong> {book.name}
-                  {book.author && ` | <strong>作者:</strong> ${book.author}`}
-                  {book.publisher && ` | <strong>出版社:</strong> ${book.publisher}`}
-                </div>
-                <div style={{ marginTop: '0.5rem', fontSize: '0.9rem', color: '#666' }}>
-                  請輸入 Copies Serial 後點擊「加入列表」
-                </div>
-                <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <input
-                    className="form-input"
-                    type="number"
-                    placeholder="Copies Serial"
-                    value={reservationCopiesInput[book.book_id] || ''}
-                    onChange={(e) => {
-                      setReservationCopiesInput({
-                        ...reservationCopiesInput,
-                        [book.book_id]: e.target.value,
-                      });
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        const serial = Number(reservationCopiesInput[book.book_id]);
-                        if (Number.isFinite(serial)) {
-                          addReservationBook(book.book_id, serial);
-                          setReservationCopiesInput({
-                            ...reservationCopiesInput,
-                            [book.book_id]: '',
-                          });
-                        }
-                      }
-                    }}
-                    disabled={loading || validating || addingItem}
-                    style={{ width: '150px' }}
-                  />
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => {
-                      const serial = Number(reservationCopiesInput[book.book_id]);
-                      if (Number.isFinite(serial)) {
-                        addReservationBook(book.book_id, serial);
-                        setReservationCopiesInput({
-                          ...reservationCopiesInput,
-                          [book.book_id]: '',
-                        });
-                      } else {
-                        setError('請輸入有效的 Copies Serial。');
-                      }
-                    }}
-                    disabled={loading || validating || addingItem}
-                    style={{ padding: '4px 12px', fontSize: '12px' }}
-                  >
-                    {addingItem ? '加入中...' : '加入列表'}
-                  </button>
-                </div>
+      <form onSubmit={onSubmit}>
+        {/* Member confirmation section - only show when NOT from reservation */}
+        {!reservationData && (
+          <div className="form-row">
+            <div className="form-field" style={{ flex: 1 }}>
+              <label className="form-label">Member ID</label>
+              <input
+                className="form-input"
+                value={memberId}
+                onChange={(e) => {
+                  setMemberId(e.target.value);
+                  setMemberDetail(null); // Clear member detail when ID changes
+                  setItems([]); // Clear items when member changes
+                }}
+                disabled={loading || validating || confirmingMember}
+                placeholder="請輸入會員 ID"
+              />
+            </div>
+            <div className="form-field" style={{ justifyContent: 'flex-end', alignSelf: 'flex-end' }}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => confirmMember()}
+                disabled={loading || validating || confirmingMember || !memberId.trim()}
+              >
+                {confirmingMember ? '確認中...' : '確認會員'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Member info display */}
+        {memberDetail && (
+          <div style={{ 
+            marginBottom: '1.5rem', 
+            padding: '1rem', 
+            backgroundColor: '#f9fafb', 
+            borderRadius: '8px', 
+            border: '1px solid #e5e7eb' 
+          }}>
+            <div style={{ marginBottom: '0.75rem', fontWeight: '600', fontSize: '1rem' }}>
+              會員資訊
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem' }}>
+              <div>
+                <strong>姓名：</strong> {memberDetail.name}
+              </div>
+              <div>
+                <strong>等級：</strong> {memberDetail.level_name}
+              </div>
+              <div>
+                <strong>可租借天數：</strong> {memberDetail.hold_days} 天
+              </div>
+              <div>
+                <strong>餘額：</strong> {memberDetail.balance}
               </div>
             </div>
-          ))}
-        </div>
-      )}
+          </div>
+        )}
 
-      <form onSubmit={onSubmit}>
-        <div className="form-row">
-          <div className="form-field">
-            <label className="form-label">Member ID</label>
-            <input
-              className="form-input"
-              value={memberId}
-              onChange={(e) => setMemberId(e.target.value)}
-              disabled={loading || validating}
-            />
+        {/* Reservation books section - only show when from reservation and member is confirmed */}
+        {reservationData && memberDetail && (
+          <div style={{ marginBottom: '1.5rem', padding: '1rem', backgroundColor: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+            <h3 style={{ marginBottom: '1rem', fontSize: '1.1rem', fontWeight: '600' }}>
+              預約書籍
+            </h3>
+            {reservationData.books.map((book) => {
+              const isBookInList = items.some(item => item.book_id === book.book_id);
+              return (
+                <div
+                  key={book.book_id}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '0.75rem',
+                    marginBottom: '0.5rem',
+                    backgroundColor: '#fff',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '4px',
+                  }}
+                >
+                  <div style={{ flex: 1 }}>
+                    <div>
+                      <strong>Book ID:</strong> {book.book_id} | <strong>書名:</strong> {book.name}
+                      {book.author && ` | <strong>作者:</strong> ${book.author}`}
+                      {book.publisher && ` | <strong>出版社:</strong> ${book.publisher}`}
+                    </div>
+                    {!isBookInList && (
+                      <>
+                        <div style={{ marginTop: '0.5rem', fontSize: '0.9rem', color: '#666' }}>
+                          請輸入 Copies Serial 後點擊「加入列表」
+                        </div>
+                        <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <input
+                            className="form-input"
+                            type="number"
+                            placeholder="Copies Serial"
+                            value={reservationCopiesInput[book.book_id] || ''}
+                            onChange={(e) => {
+                              setReservationCopiesInput({
+                                ...reservationCopiesInput,
+                                [book.book_id]: e.target.value,
+                              });
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                const serial = Number(reservationCopiesInput[book.book_id]);
+                                if (Number.isFinite(serial)) {
+                                  addReservationBook(book.book_id, serial);
+                                  setReservationCopiesInput({
+                                    ...reservationCopiesInput,
+                                    [book.book_id]: '',
+                                  });
+                                }
+                              }
+                            }}
+                            disabled={loading || validating || addingItem || !memberDetail}
+                            style={{ width: '150px' }}
+                          />
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() => {
+                              const serial = Number(reservationCopiesInput[book.book_id]);
+                              if (Number.isFinite(serial)) {
+                                addReservationBook(book.book_id, serial);
+                                setReservationCopiesInput({
+                                  ...reservationCopiesInput,
+                                  [book.book_id]: '',
+                                });
+                              } else {
+                                setError('請輸入有效的 Copies Serial。');
+                              }
+                            }}
+                            disabled={loading || validating || addingItem || !memberDetail}
+                            style={{ padding: '4px 12px', fontSize: '12px' }}
+                          >
+                            {addingItem ? '加入中...' : '加入列表'}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                    {isBookInList && (
+                      <div style={{ marginTop: '0.5rem', fontSize: '0.9rem', color: '#10b981', fontWeight: '500' }}>
+                        ✓ 已加入列表
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        </div>
-        <div className="form-row">
-          <div className="form-field">
-            <label className="form-label">Book ID</label>
-            <input
-              className="form-input"
-              value={bookIdInput}
-              onChange={(e) => setBookIdInput(e.target.value)}
-              disabled={loading || validating || addingItem}
-            />
+        )}
+
+        {/* Book input section - only show when NOT from reservation and member is confirmed */}
+        {!reservationData && memberDetail && (
+          <div className="form-row">
+            <div className="form-field">
+              <label className="form-label">Book ID</label>
+              <input
+                className="form-input"
+                value={bookIdInput}
+                onChange={(e) => setBookIdInput(e.target.value)}
+                disabled={loading || validating || addingItem || !memberDetail}
+                placeholder="請輸入書籍 ID"
+              />
+            </div>
+            <div className="form-field">
+              <label className="form-label">Copies Serial</label>
+              <input
+                className="form-input"
+                value={copySerialInput}
+                onChange={(e) => setCopySerialInput(e.target.value)}
+                disabled={loading || validating || addingItem || !memberDetail}
+                placeholder="請輸入副本序號"
+              />
+            </div>
+            <div className="form-field" style={{ justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={addItem}
+                disabled={loading || validating || addingItem || !memberDetail}
+              >
+                {addingItem ? '加入中...' : '加入列表'}
+              </button>
+            </div>
           </div>
-          <div className="form-field">
-            <label className="form-label">Copies Serial</label>
-            <input
-              className="form-input"
-              value={copySerialInput}
-              onChange={(e) => setCopySerialInput(e.target.value)}
-              disabled={loading || validating || addingItem}
-            />
-          </div>
-          <div className="form-field" style={{ justifyContent: 'flex-end' }}>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={addItem}
-              disabled={loading || validating || addingItem}
-            >
-              {addingItem ? '加入中...' : '加入列表'}
-            </button>
-          </div>
-        </div>
+        )}
         {items.length > 0 && (
           <>
             <table className="table">
@@ -458,13 +571,15 @@ export function AdminBorrowPage() {
             </table>
           </>
         )}
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={loading || validating || items.length === 0}
-        >
-          {validating ? '驗證中...' : loading ? '處理中...' : '辦理借書'}
-        </button>
+        {memberDetail && (
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={loading || validating || items.length === 0 || !memberDetail}
+          >
+            {validating ? '驗證中...' : loading ? '處理中...' : '辦理借書'}
+          </button>
+        )}
       </form>
       {result && (
         <div className="text-muted">
