@@ -15,6 +15,7 @@ import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { AdminMembersPage } from './pages/admin/AdminMembersPage';
 import { AdminMemberDetailPage } from './pages/admin/AdminMemberDetailPage';
 import { AdminBooksPage } from './pages/admin/AdminBooksPage';
+import { AdminBookDetailPage } from './pages/admin/AdminBookDetailPage';
 import { AdminBorrowPage } from './pages/admin/AdminBorrowPage';
 import { AdminReturnPage } from './pages/admin/AdminReturnPage';
 import { AdminReservationsPage } from './pages/admin/AdminReservationsPage';
@@ -463,6 +464,14 @@ function AppShell() {
               element={
                 <ProtectedAdminRoute>
                   <AdminBooksPage />
+                </ProtectedAdminRoute>
+              }
+            />
+            <Route
+              path="/admin/books/:bookId"
+              element={
+                <ProtectedAdminRoute>
+                  <AdminBookDetailPage />
                 </ProtectedAdminRoute>
               }
             />
