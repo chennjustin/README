@@ -18,6 +18,7 @@ import { AdminBorrowPage } from './pages/admin/AdminBorrowPage';
 import { AdminReturnPage } from './pages/admin/AdminReturnPage';
 import { AdminReservationsPage } from './pages/admin/AdminReservationsPage';
 import { AdminStatsPage } from './pages/admin/AdminStatsPage';
+import { RoleSelectionPage } from './pages/RoleSelectionPage';
 
 // Protected route component for member pages
 // Defined at module level to ensure stable component definition
@@ -46,6 +47,7 @@ function AppShell() {
   const navigate = useNavigate();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const isAdmin = location.pathname.startsWith('/admin');
+  const isHomePage = location.pathname === '/';
   const { memberId, setMemberId } = useMember();
   const { admin, setAuth } = useAdmin();
   // Check if member is logged in (memberId exists and is valid)
@@ -69,24 +71,27 @@ function AppShell() {
     <div className="app-root">
       <header className="app-header">
         <div className="app-header-left">
-          <button 
-            className="app-sidebar-toggle"
-            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            aria-label="切換側邊欄"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="3" y1="12" x2="21" y2="12"></line>
-              <line x1="3" y1="6" x2="21" y2="6"></line>
-              <line x1="3" y1="18" x2="21" y2="18"></line>
-            </svg>
-          </button>
+          {!isHomePage && (
+            <button 
+              className="app-sidebar-toggle"
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              aria-label="切換側邊欄"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <line x1="3" y1="18" x2="21" y2="18"></line>
+              </svg>
+            </button>
+          )}
           <div className="app-header-title">ReadMe!</div>
         </div>
       </header>
-      <div className={`app-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
-        <aside className="app-sidebar">
-          <div className="app-sidebar-content">
-          {!isAdmin ? (
+      <div className={`app-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${isHomePage ? 'no-sidebar' : ''}`}>
+        {!isHomePage && (
+          <aside className="app-sidebar">
+            <div className="app-sidebar-content">
+            {!isAdmin ? (
             <>
               {isLoggedIn ? (
                 // Show all pages when logged in
@@ -373,9 +378,10 @@ function AppShell() {
             </div>
           )}
         </aside>
+        )}
         <main className="app-content">
           <Routes>
-            <Route path="/" element={<Navigate to="/member/login" replace />} />
+            <Route path="/" element={<RoleSelectionPage />} />
             <Route path="/member/login" element={<MemberLoginPage />} />
             <Route
               path="/member"

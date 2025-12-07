@@ -187,6 +187,10 @@ a {
   grid-template-columns: 80px 1fr;
 }
 
+.app-layout.no-sidebar {
+  grid-template-columns: 1fr;
+}
+
 .app-sidebar {
   background: var(--sidebar-bg);
   border-right: 1px solid #e5e7eb;
