@@ -221,6 +221,21 @@ export const adminApi = {
       this.headers(token)
     );
   },
+  getAvailableCopies(token: string, bookId: number): Promise<{
+    book_id: number;
+    book_name: string | null;
+    copies: Array<{
+      copies_serial: number;
+      status: string;
+      book_condition: string;
+      rental_price: number;
+    }>;
+  }> {
+    return api.get(
+      `/api/admin/books/${bookId}/available-copies`,
+      this.headers(token)
+    );
+  },
 };
 
 
