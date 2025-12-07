@@ -152,12 +152,17 @@ reservationRouter.post(
         const reservedCopies: { book_id: number; copies_serial: number }[] = [];
         for (const bid of book_ids) {
           // 查詢並鎖定 available 複本
+          // PostgreSQL 不支援 SELECT ... FOR UPDATE LIMIT 1，需要使用子查詢
           const copySql = `
             SELECT book_id, copies_serial 
             FROM BOOK_COPIES 
-            WHERE book_id = $1 AND status = 'Available' 
-            FOR UPDATE 
-            LIMIT 1
+            WHERE ctid = (
+              SELECT ctid 
+              FROM BOOK_COPIES 
+              WHERE book_id = $1 AND status = 'Available' 
+              LIMIT 1
+            )
+            FOR UPDATE
           `;
           const copyRes = await client.query(copySql, [bid]);
           

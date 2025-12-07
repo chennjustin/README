@@ -980,7 +980,9 @@ adminRouter.get(
             AND r.status = 'Active'
         `;
         const hasReservationRes = await query(hasReservationSql, [memberId, bookId]);
-        const hasReservation = hasReservationRes.rows[0].has_reservation;
+        // PostgreSQL boolean 值在 Node.js 中可能是 boolean 或 string ('t'/'f')，需要確保正確轉換
+        const hasReservationRaw = hasReservationRes.rows[0]?.has_reservation;
+        const hasReservation = hasReservationRaw === true || hasReservationRaw === 't' || hasReservationRaw === 1;
 
         if (hasReservation) {
           // 有預約：返回 Available 和 Reserved 的複本
@@ -1111,7 +1113,31 @@ adminRouter.get(
       }
       const copy = copyRes.rows[0];
 
-      if (copy.status !== 'Available') {
+      // 檢查複本狀態：Available 所有人都可以借，Reserved 只有有預約的會員可以借
+      if (copy.status === 'Available') {
+        // 可借（所有人）
+      } else if (copy.status === 'Reserved') {
+        // 檢查該會員是否有 Active 預約
+        const hasReservationSql = `
+          SELECT COUNT(*) > 0 AS has_reservation
+          FROM RESERVATION r
+          JOIN RESERVATION_RECORD rr ON r.reservation_id = rr.reservation_id
+          WHERE r.member_id = $1
+            AND rr.book_id = $2
+            AND r.status = 'Active'
+        `;
+        const hasReservationRes = await query(hasReservationSql, [memberId, bookId]);
+        const hasReservationRaw = hasReservationRes.rows[0]?.has_reservation;
+        const hasReservation = hasReservationRaw === true || hasReservationRaw === 't' || hasReservationRaw === 1;
+        
+        if (!hasReservation) {
+          return res.status(400).json({
+            success: false,
+            error: { code: 'COPY_NOT_AVAILABLE', message: '此複本為預約狀態，只有有預約的會員可以借閱' },
+          });
+        }
+      } else {
+        // Borrowed 或 Lost 狀態不可借
         return res.status(400).json({
           success: false,
           error: { code: 'COPY_NOT_AVAILABLE', message: '複本不可借出' },
@@ -1243,7 +1269,9 @@ adminRouter.post(
               AND r.status = 'Active'
           `;
           const hasReservationRes = await client.query(hasReservationSql, [member_id, book_id]);
-          const hasReservation = hasReservationRes.rows[0].has_reservation;
+          // PostgreSQL boolean 值在 Node.js 中可能是 boolean 或 string ('t'/'f')，需要確保正確轉換
+          const hasReservationRaw = hasReservationRes.rows[0]?.has_reservation;
+          const hasReservation = hasReservationRaw === true || hasReservationRaw === 't' || hasReservationRaw === 1;
           
           // 2. 查詢複本狀態並鎖定
           const copySql = `
@@ -1344,15 +1372,19 @@ adminRouter.post(
           
           // 若借的是預約的複本，更新對應的 RESERVATION 為 Fulfilled
           if (rental.was_reserved) {
+            // PostgreSQL 不支援 UPDATE ... LIMIT 1，需要使用子查詢
             await client.query(
               `UPDATE RESERVATION r
                SET status = 'Fulfilled', pickup_date = CURRENT_DATE
-               FROM RESERVATION_RECORD rr
-               WHERE r.reservation_id = rr.reservation_id
-                 AND rr.book_id = $1
-                 AND r.member_id = $2
-                 AND r.status = 'Active'
-               LIMIT 1`,
+               WHERE r.reservation_id = (
+                 SELECT r2.reservation_id
+                 FROM RESERVATION r2
+                 JOIN RESERVATION_RECORD rr ON r2.reservation_id = rr.reservation_id
+                 WHERE rr.book_id = $1
+                   AND r2.member_id = $2
+                   AND r2.status = 'Active'
+                 LIMIT 1
+               )`,
               [item.book_id, member_id]
             );
           }

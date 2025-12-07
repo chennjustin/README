@@ -79,7 +79,7 @@ export function AdminBorrowPage() {
   };
 
   // Load available copies for reservation books
-  const loadReservationCopies = async (bookId: number) => {
+  const loadReservationCopies = async (bookId: number, memberIdValue?: number) => {
     if (!token) {
       return;
     }
@@ -87,7 +87,8 @@ export function AdminBorrowPage() {
     setLoadingReservationCopies((prev) => ({ ...prev, [bookId]: true }));
 
     try {
-      const memberId = memberDetail?.member_id;
+      // 優先使用傳入的 memberIdValue，否則使用 memberDetail?.member_id
+      const memberId = memberIdValue || memberDetail?.member_id;
       const result = await adminApi.getAvailableCopies(token, bookId, memberId);
       setReservationAvailableCopies((prev) => ({
         ...prev,
@@ -114,9 +115,10 @@ export function AdminBorrowPage() {
       if (token) {
         confirmMember(String(state.member_id)).then(() => {
           // After member is confirmed, load available copies for each book
+          // 傳遞 member_id 確保正確查詢預約狀態
           if (token && state.books) {
             state.books.forEach((book) => {
-              loadReservationCopies(book.book_id);
+              loadReservationCopies(book.book_id, state.member_id);
             });
           }
         });

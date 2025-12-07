@@ -9,6 +9,8 @@ export interface ApiError {
     code: string;
     message: string;
     details?: any;
+    hint?: string;
+    detail?: string;
   };
 }
 
