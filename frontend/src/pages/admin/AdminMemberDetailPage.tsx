@@ -228,24 +228,30 @@ export function AdminMemberDetailPage() {
 
       <div className="card">
         <div className="card-title">新增儲值</div>
-        <form onSubmit={onCreateTopUp}>
-          <div className="form-row">
-            <div className="form-field">
-              <label className="form-label">儲值金額</label>
-              <input
-                className="form-input"
-                type="number"
-                value={topUpAmount}
-                onChange={(e) => setTopUpAmount(Number(e.target.value))}
-                min="1"
-                step="1"
-              />
-            </div>
+        {memberDetail.status !== 'Active' ? (
+          <div className="text-muted">
+            此會員狀態為 {memberDetail.status}，無法進行儲值操作
           </div>
-          <button type="submit" className="btn btn-primary" disabled={loading}>
-            新增儲值
-          </button>
-        </form>
+        ) : (
+          <form onSubmit={onCreateTopUp}>
+            <div className="form-row">
+              <div className="form-field">
+                <label className="form-label">儲值金額</label>
+                <input
+                  className="form-input"
+                  type="number"
+                  value={topUpAmount}
+                  onChange={(e) => setTopUpAmount(Number(e.target.value))}
+                  min="1"
+                  step="1"
+                />
+              </div>
+            </div>
+            <button type="submit" className="btn btn-primary" disabled={loading}>
+              新增儲值
+            </button>
+          </form>
+        )}
       </div>
 
       <div className="card">

@@ -54,9 +54,16 @@ memberRouter.post(
 
       // Check if member status is active
       if (member.status !== 'Active') {
+        // Return different error messages based on status
+        let errorMessage = '會員帳號未啟用';
+        if (member.status === 'Suspended') {
+          errorMessage = '該會員已停權';
+        } else if (member.status === 'Inactive') {
+          errorMessage = '該會員已註銷帳號';
+        }
         return res.status(403).json({
           success: false,
-          error: { code: 'MEMBER_INACTIVE', message: '會員帳號未啟用' },
+          error: { code: 'MEMBER_INACTIVE', message: errorMessage },
         });
       }
 

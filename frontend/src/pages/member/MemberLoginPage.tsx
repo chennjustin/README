@@ -31,7 +31,9 @@ export function MemberLoginPage() {
       // Handle specific error messages from backend
       // Error format from api.ts: "CODE: message"
       if (e.message) {
-        const errorMessage = e.message.includes(':') ? e.message.split(':').slice(1).join(':').trim() : e.message;
+        let errorMessage = e.message.includes(':') ? e.message.split(':').slice(1).join(':').trim() : e.message;
+        // The backend now returns specific messages like "該會員已停權" or "該會員已註銷帳號"
+        // Use the message as-is from backend
         setError(errorMessage);
       } else {
         setError('登入失敗，請稍後再試');
