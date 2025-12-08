@@ -111,6 +111,34 @@ export interface TopCategory {
   borrow_count: number;
 }
 
+export interface StatsByMembershipLevel {
+  level_id: number;
+  level_name: string;
+  borrow_count: number;
+  member_count: number;
+}
+
+export interface CategoryByLevel {
+  category_id: number;
+  category_name: string;
+  level_id: number;
+  level_name: string;
+  borrow_count: number;
+}
+
+export interface StatsSummary {
+  period: {
+    start_date: string;
+    end_date: string;
+  };
+  summary: {
+    total_borrows: number;
+    total_revenue: number;
+    active_members: number;
+    unique_books: number;
+  };
+}
+
 export interface AdminLoginResult {
   token: string;
   admin: {

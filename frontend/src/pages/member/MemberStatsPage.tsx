@@ -14,9 +14,16 @@ export function MemberStatsPage() {
       setLoading(true);
       setError(null);
       try {
+        // 計算當月的開始和結束日期
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = now.getMonth();
+        const startDate = new Date(year, month, 1).toISOString().split('T')[0];
+        const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+
         const [books, cats] = await Promise.all([
-          booksApi.getTopBooks(10),
-          booksApi.getTopCategories(10),
+          booksApi.getTopBooks(10, startDate, endDate),
+          booksApi.getTopCategories(10, startDate, endDate),
         ]);
         setTopBooks(books);
         setTopCategories(cats);
@@ -32,13 +39,10 @@ export function MemberStatsPage() {
   return (
     <>
       <div className="card">
-        <div className="card-title">熱門排行榜（本月）</div>
+        <div className="card-title">熱門書籍（本月）</div>
         {loading && <div className="text-muted">載入中...</div>}
         {error && <div className="error-text">{error}</div>}
-      </div>
-      <div className="card">
-        <div className="card-title">熱門書籍</div>
-        {topBooks.length === 0 && !loading && <div className="text-muted">沒有資料。</div>}
+        {topBooks.length === 0 && !loading && !error && <div className="text-muted">沒有資料。</div>}
         {topBooks.length > 0 && (
           <table className="table">
             <thead>
@@ -67,8 +71,10 @@ export function MemberStatsPage() {
         )}
       </div>
       <div className="card">
-        <div className="card-title">熱門類別</div>
-        {topCategories.length === 0 && !loading && <div className="text-muted">沒有資料。</div>}
+        <div className="card-title">熱門類別（本月）</div>
+        {loading && <div className="text-muted">載入中...</div>}
+        {error && <div className="error-text">{error}</div>}
+        {topCategories.length === 0 && !loading && !error && <div className="text-muted">沒有資料。</div>}
         {topCategories.length > 0 && (
           <table className="table">
             <thead>
