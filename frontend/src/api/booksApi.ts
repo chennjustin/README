@@ -1,5 +1,13 @@
 import { api } from '../config/api';
-import { BookDetail, BookSummary, TopBook, TopCategory } from '../types';
+import {
+  BookDetail,
+  BookSummary,
+  TopBook,
+  TopCategory,
+  StatsByMembershipLevel,
+  CategoryByLevel,
+  StatsSummary,
+} from '../types';
 
 export const booksApi = {
   search(params: {
@@ -29,11 +37,40 @@ export const booksApi = {
     const qs = memberId != null ? `?memberId=${memberId}` : '';
     return api.get<BookDetail>(`/api/books/${bookId}${qs}`);
   },
-  getTopBooks(limit = 10) {
-    return api.get<TopBook[]>(`/api/stats/top-books?limit=${limit}`);
+  getTopBooks(limit = 10, startDate?: string, endDate?: string) {
+    const query = new URLSearchParams();
+    query.set('limit', String(limit));
+    if (startDate) query.set('startDate', startDate);
+    if (endDate) query.set('endDate', endDate);
+    return api.get<TopBook[]>(`/api/stats/top-books?${query.toString()}`);
   },
-  getTopCategories(limit = 10) {
-    return api.get<TopCategory[]>(`/api/stats/top-categories?limit=${limit}`);
+  getTopCategories(limit = 10, startDate?: string, endDate?: string) {
+    const query = new URLSearchParams();
+    query.set('limit', String(limit));
+    if (startDate) query.set('startDate', startDate);
+    if (endDate) query.set('endDate', endDate);
+    return api.get<TopCategory[]>(`/api/stats/top-categories?${query.toString()}`);
+  },
+  getStatsByMembershipLevel(startDate?: string, endDate?: string) {
+    const query = new URLSearchParams();
+    if (startDate) query.set('startDate', startDate);
+    if (endDate) query.set('endDate', endDate);
+    const qs = query.toString();
+    return api.get<StatsByMembershipLevel[]>(`/api/stats/by-membership-level${qs ? `?${qs}` : ''}`);
+  },
+  getCategoriesByLevel(limit = 10, startDate?: string, endDate?: string) {
+    const query = new URLSearchParams();
+    query.set('limit', String(limit));
+    if (startDate) query.set('startDate', startDate);
+    if (endDate) query.set('endDate', endDate);
+    return api.get<CategoryByLevel[]>(`/api/stats/categories-by-level?${query.toString()}`);
+  },
+  getStatsSummary(startDate?: string, endDate?: string) {
+    const query = new URLSearchParams();
+    if (startDate) query.set('startDate', startDate);
+    if (endDate) query.set('endDate', endDate);
+    const qs = query.toString();
+    return api.get<StatsSummary>(`/api/stats/summary${qs ? `?${qs}` : ''}`);
   },
 };
 
