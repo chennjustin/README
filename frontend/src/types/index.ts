@@ -282,6 +282,11 @@ export interface BatchReturnResponse {
   success_count: number;
   fail_count: number;
   results: BatchReturnResult[];
+  member_info?: Array<{
+    member_id: number;
+    name: string;
+    balance: number;
+  }>;
 }
 
 // Book management related types

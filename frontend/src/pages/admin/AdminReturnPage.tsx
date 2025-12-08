@@ -25,7 +25,7 @@ export function AdminReturnPage() {
   const [returnList, setReturnList] = useState<ReturnListItem[]>([]);
   const [calculatingFines, setCalculatingFines] = useState(false);
   const [returning, setReturning] = useState(false);
-  const [returnResult, setReturnResult] = useState<{ success_count: number; fail_count: number; results?: any[] } | null>(null);
+  const [returnResult, setReturnResult] = useState<{ success_count: number; fail_count: number; results?: any[]; member_info?: Array<{ member_id: number; name: string; balance: number }> } | null>(null);
   const [returnError, setReturnError] = useState<string | null>(null);
   const [expandedLoans, setExpandedLoans] = useState<Set<number>>(new Set());
 
@@ -231,6 +231,7 @@ export function AdminReturnPage() {
         success_count: res.success_count,
         fail_count: res.fail_count,
         results: res.results,
+        member_info: res.member_info,
       });
       // Remove successfully returned items from list
       const successKeys = new Set(
@@ -551,11 +552,44 @@ export function AdminReturnPage() {
             borderRadius: '4px',
           }}
         >
-          <div style={{ fontWeight: '600', marginBottom: returnResult.fail_count > 0 ? '0.5rem' : '0' }}>
+          <div style={{ fontWeight: '600', marginBottom: '0.75rem', fontSize: '1.1rem' }}>
             本次還書成功 {returnResult.success_count} 筆、失敗 {returnResult.fail_count} 筆
           </div>
+          
+          {/* Member Information */}
+          {returnResult.success_count > 0 && returnResult.member_info && returnResult.member_info.length > 0 && (
+            <div style={{ marginTop: '1rem', marginBottom: '0.75rem' }}>
+              <div style={{ fontWeight: '600', marginBottom: '0.5rem', fontSize: '1rem' }}>會員資訊：</div>
+              {returnResult.member_info.map((member, idx) => (
+                <div
+                  key={member.member_id}
+                  style={{
+                    padding: '0.75rem',
+                    backgroundColor: '#fff',
+                    borderRadius: '4px',
+                    marginBottom: idx < returnResult.member_info!.length - 1 ? '0.5rem' : '0',
+                    border: '1px solid #4caf50',
+                  }}
+                >
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
+                    <div>
+                      <strong>會員 ID：</strong> {member.member_id}
+                    </div>
+                    <div>
+                      <strong>會員姓名：</strong> {member.name}
+                    </div>
+                    <div>
+                      <strong>剩餘餘額：</strong> {member.balance}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Failure Details */}
           {returnResult.fail_count > 0 && returnResult.results && (
-            <div style={{ marginTop: '0.5rem' }}>
+            <div style={{ marginTop: '0.75rem' }}>
               <div style={{ fontWeight: '600', marginBottom: '0.25rem' }}>失敗詳情：</div>
               {returnResult.results
                 .filter((r) => !r.success)

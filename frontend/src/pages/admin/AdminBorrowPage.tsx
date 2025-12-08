@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useState, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { adminApi } from '../../api/adminApi';
 import { useAdmin } from '../../context/AdminContext';
@@ -28,6 +28,7 @@ export function AdminBorrowPage() {
   const [memberDetail, setMemberDetail] = useState<MemberDetail | null>(null);
   const [confirmingMember, setConfirmingMember] = useState(false);
   const [items, setItems] = useState<BorrowItem[]>([]);
+  const itemsRef = useRef<BorrowItem[]>([]); // 用於追蹤最新的 items 狀態
   const [bookIdInput, setBookIdInput] = useState('');
   const [copySerialInput, setCopySerialInput] = useState('');
   const [availableCopies, setAvailableCopies] = useState<Array<{
@@ -44,6 +45,7 @@ export function AdminBorrowPage() {
   const [addingItem, setAddingItem] = useState(false);
   const [validating, setValidating] = useState(false);
   const [reservationData, setReservationData] = useState<ReservationData | null>(null);
+  const [missingBooks, setMissingBooks] = useState<number[]>([]); // 記錄提交時缺少的書籍 ID
   const [reservationCopiesInput, setReservationCopiesInput] = useState<Record<number, string>>({});
   const [reservationAvailableCopies, setReservationAvailableCopies] = useState<Record<number, Array<{
     copies_serial: number;
@@ -53,59 +55,12 @@ export function AdminBorrowPage() {
   }>>>({});
   const [loadingReservationCopies, setLoadingReservationCopies] = useState<Record<number, boolean>>({});
 
-  // Parse error message and extract error code
-  const parseError = (error: any): { code: string; message: string } => {
-    const errorMessage = error?.message || '發生未知錯誤';
-    // Error format from API config: "CODE: message"
-    const match = errorMessage.match(/^([^:]+):\s*(.+)$/);
-    if (match) {
-      return { code: match[1], message: match[2] };
-    }
-    return { code: 'UNKNOWN_ERROR', message: errorMessage };
-  };
+  // 同步 itemsRef 與 items state
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
-  // Error message mapping based on error code
-  const getErrorMessage = (errorCode: string, defaultMessage: string): string => {
-    const errorMap: Record<string, string> = {
-      MEMBER_NOT_FOUND: '找不到會員',
-      COPY_NOT_FOUND: '找不到書籍複本',
-      MEMBER_INACTIVE: '會員狀態不可借書，請先將會員狀態設為 Active',
-      COPY_NOT_AVAILABLE: '複本不可借出',
-      INVALID_INPUT: '輸入格式錯誤',
-      HTTP_ERROR: defaultMessage,
-      UNKNOWN_ERROR: defaultMessage,
-    };
-    return errorMap[errorCode] || defaultMessage;
-  };
-
-  // Load available copies for reservation books
-  const loadReservationCopies = async (bookId: number, memberIdValue?: number) => {
-    if (!token) {
-      return;
-    }
-
-    setLoadingReservationCopies((prev) => ({ ...prev, [bookId]: true }));
-
-    try {
-      // 優先使用傳入的 memberIdValue，否則使用 memberDetail?.member_id
-      const memberId = memberIdValue || memberDetail?.member_id;
-      const result = await adminApi.getAvailableCopies(token, bookId, memberId);
-      setReservationAvailableCopies((prev) => ({
-        ...prev,
-        [bookId]: result.copies || [],
-      }));
-    } catch (e: any) {
-      // Silently fail for reservation copies loading
-      setReservationAvailableCopies((prev) => ({
-        ...prev,
-        [bookId]: [],
-      }));
-    } finally {
-      setLoadingReservationCopies((prev) => ({ ...prev, [bookId]: false }));
-    }
-  };
-
-  // Handle reservation data from navigation
+  // Load reservation data from navigation state
   useEffect(() => {
     const state = location.state as ReservationData | null;
     if (state?.fromReservation) {
@@ -115,7 +70,6 @@ export function AdminBorrowPage() {
       if (token) {
         confirmMember(String(state.member_id)).then(() => {
           // After member is confirmed, load available copies for each book
-          // 傳遞 member_id 確保正確查詢預約狀態
           if (token && state.books) {
             state.books.forEach((book) => {
               loadReservationCopies(book.book_id, state.member_id);
@@ -125,22 +79,42 @@ export function AdminBorrowPage() {
       }
       // Clear location state to prevent re-processing on re-render
       window.history.replaceState({}, document.title);
-      // Debug: log reservation data
       console.log('Reservation data loaded:', state);
     }
-  }, [location.state]);
+  }, [location.state, token]);
 
-  // Confirm member function
-  const confirmMember = async (memberIdValue?: string): Promise<void> => {
-    const mid = memberIdValue || memberId;
+  // Load available copies for a book in reservation context
+  const loadReservationCopies = async (bookId: number, memberId: number) => {
+    if (!token) return;
+
+    setLoadingReservationCopies((prev) => ({ ...prev, [bookId]: true }));
+    try {
+      const result = await adminApi.getAvailableCopies(token, bookId, memberId);
+      setReservationAvailableCopies((prev) => ({
+        ...prev,
+        [bookId]: result.copies,
+      }));
+    } catch (e) {
+      console.error('Failed to load reservation copies:', e);
+      setReservationAvailableCopies((prev) => ({
+        ...prev,
+        [bookId]: [],
+      }));
+    } finally {
+      setLoadingReservationCopies((prev) => ({ ...prev, [bookId]: false }));
+    }
+  };
+
+  const confirmMember = async (id?: string) => {
+    const mid = id || memberId;
     if (!mid.trim()) {
-      setError('請輸入 Member ID。');
+      setError('請輸入會員 ID');
       return;
     }
 
-    const midNum = Number(mid);
-    if (!Number.isFinite(midNum) || midNum <= 0) {
-      setError('Member ID 必須為有效的正整數。');
+    const memberIdNum = Number(mid);
+    if (!Number.isFinite(memberIdNum) || memberIdNum <= 0) {
+      setError('會員 ID 格式錯誤');
       return;
     }
 
@@ -153,75 +127,51 @@ export function AdminBorrowPage() {
     setError(null);
     setMemberDetail(null);
     setItems([]); // Clear items when changing member
+    itemsRef.current = []; // 清除 ref
 
     try {
-      const detail = await adminApi.getMemberDetail(token, midNum);
-      setMemberDetail(detail);
-      setMemberId(String(midNum));
+      const profile = await adminApi.getMemberDetail(token, memberIdNum);
+      setMemberDetail(profile);
       setError(null);
     } catch (e: any) {
       const { code: errorCode, message: errorMsg } = parseError(e);
       setError(getErrorMessage(errorCode, errorMsg));
-      setMemberDetail(null);
     } finally {
       setConfirmingMember(false);
     }
   };
 
-  // Fetch available copies when book_id changes
-  const handleBookIdChange = async (value: string) => {
-    setBookIdInput(value);
-    setCopySerialInput(''); // Clear copies_serial when book_id changes
-    setAvailableCopies([]);
-    setSelectedBookName(null);
-
-    if (!value.trim()) {
-      return;
+  function parseError(e: any): { code: string; message: string } {
+    if (e?.response?.data?.error) {
+      return {
+        code: e.response.data.error.code || 'UNKNOWN_ERROR',
+        message: e.response.data.error.message || '發生未知錯誤',
+      };
     }
+    return { code: 'UNKNOWN_ERROR', message: e?.message || '發生未知錯誤' };
+  }
 
-    const bookId = Number(value);
-    if (!Number.isFinite(bookId) || bookId <= 0) {
-      return;
-    }
-
-    if (!token) {
-      return;
-    }
-
-    setLoadingCopies(true);
-    setError(null);
-
-    try {
-      const memberId = memberDetail?.member_id;
-      const result = await adminApi.getAvailableCopies(token, bookId, memberId);
-      setAvailableCopies(result.copies || []);
-      setSelectedBookName(result.book_name);
-      if (result.copies.length === 0) {
-        setError('此書籍目前沒有可用的複本。');
-      }
-    } catch (e: any) {
-      const { code: errorCode, message: errorMsg } = parseError(e);
-      setError(getErrorMessage(errorCode, errorMsg));
-      setAvailableCopies([]);
-      setSelectedBookName(null);
-    } finally {
-      setLoadingCopies(false);
-    }
-  };
+  function getErrorMessage(code: string, message: string): string {
+    const errorMessages: Record<string, string> = {
+      MEMBER_NOT_FOUND: '找不到此會員',
+      INSUFFICIENT_BALANCE: '會員餘額不足',
+      LOAN_LIMIT_EXCEEDED: '已達借閱上限',
+      BOOK_NOT_AVAILABLE: '書籍不可借',
+      COPY_NOT_FOUND: '找不到此書籍複本',
+      COPY_NOT_AVAILABLE: '此複本不可借',
+      INVALID_INPUT: message || '輸入格式錯誤',
+    };
+    return errorMessages[code] || message || '發生未知錯誤';
+  }
 
   const addItem = async () => {
-    // Validate member is confirmed
     if (!memberDetail) {
       setError('請先確認會員。');
       return;
     }
 
-    if (!bookIdInput.trim()) {
-      setError('請輸入 Book ID。');
-      return;
-    }
-    if (!copySerialInput.trim()) {
-      setError('請選擇 Copies Serial。');
+    if (!token) {
+      setError('請先在管理端登入頁登入。');
       return;
     }
 
@@ -255,8 +205,13 @@ export function AdminBorrowPage() {
       // Call API to get preview information and validate
       const preview = await adminApi.getBorrowPreview(token, mid, b, c);
       
-      // Add item to list with all details
-      setItems([...items, preview]);
+      // Add item to list with all details (使用函數式更新確保狀態同步)
+      setItems((prevItems) => {
+        const newItems = [...prevItems, preview];
+        itemsRef.current = newItems; // 同步更新 ref
+        console.log('Added item to list:', { bookId: b, copiesSerial: c, newItemsCount: newItems.length });
+        return newItems;
+      });
       setBookIdInput('');
       setCopySerialInput('');
       setError(null);
@@ -294,6 +249,7 @@ export function AdminBorrowPage() {
 
       // Update items with latest validated data
       setItems(newItems);
+      itemsRef.current = newItems; // 同步更新 ref
       setError(null);
       return true;
     } catch (e: any) {
@@ -306,7 +262,13 @@ export function AdminBorrowPage() {
   };
 
   const removeItem = (index: number) => {
-    setItems(items.filter((_, i) => i !== index));
+    setItems((prevItems) => {
+      const removedItem = prevItems[index];
+      const newItems = prevItems.filter((_, i) => i !== index);
+      itemsRef.current = newItems; // 同步更新 ref
+      console.log('Removed item:', { index, removedItem, newItemsCount: newItems.length });
+      return newItems;
+    });
     setError(null);
   };
 
@@ -320,37 +282,59 @@ export function AdminBorrowPage() {
       setError('請先確認會員。');
       return;
     }
-    if (items.length === 0) {
+    
+    // 使用 ref 來獲取最新的 items 狀態
+    const currentItems = itemsRef.current.length > 0 ? itemsRef.current : items;
+    
+    if (currentItems.length === 0) {
       setError('請至少添加一筆借書項目。');
       return;
     }
     
+    const mid = memberDetail.member_id;
+
+    // Revalidate all items before submission (先驗證，確保 items 是最新的)
+    const isValid = await revalidateAllItems();
+    if (!isValid) {
+      return;
+    }
+
+    // 驗證完成後，使用最新的 items 狀態（從 ref 獲取，因為 revalidateAllItems 會更新它）
+    const validatedItems = itemsRef.current.length > 0 ? itemsRef.current : items;
+    
     // 如果從預約進入，檢查是否所有預約的書籍都已加入借書列表
     if (reservationData) {
-      const reservationBookIds = reservationData.books.map(b => b.book_id);
-      const borrowedBookIds = items.map(item => item.book_id);
+      // 統一用數字來比較 book_id，避免型別不一致
+      const reservationBookIds = reservationData.books.map(b => Number(b.book_id));
+      // 使用 Set 來確保去重，因為同一本書可能有多個複本
+      const borrowedBookIdsSet = new Set(validatedItems.map(item => Number(item.book_id)));
       
-      // 檢查是否所有預約的書籍都已加入
-      const missingBooks = reservationBookIds.filter(
-        bookId => !borrowedBookIds.includes(bookId)
+      console.log('Validation check after revalidate:', {
+        reservationBookIds,
+        borrowedBookIds: Array.from(borrowedBookIdsSet),
+        items: validatedItems.map(i => ({ book_id: i.book_id, copies_serial: i.copies_serial }))
+      });
+      
+      // 檢查是否所有預約的書籍都已加入（至少有一個複本）
+      const missing = reservationBookIds.filter(
+        (bookId) => !borrowedBookIdsSet.has(Number(bookId))
       );
       
-      if (missingBooks.length > 0) {
-        const missingBookNames = missingBooks.map(bookId => {
-          const book = reservationData.books.find(b => b.book_id === bookId);
+      console.log('Missing books:', missing);
+      
+      if (missing.length > 0) {
+        setMissingBooks(missing); // 記錄缺少的書籍 ID（統一為數字）
+        const missingBookNames = missing.map((bookId) => {
+          const book = reservationData.books.find(
+            (b) => Number(b.book_id) === Number(bookId)
+          );
           return book ? book.name : `Book ID: ${bookId}`;
         });
         setError(`請將預約中的所有書籍都加入借書列表。缺少：${missingBookNames.join('、')}`);
         return;
+      } else {
+        setMissingBooks([]); // 清除缺少的書籍記錄
       }
-    }
-    
-    const mid = memberDetail.member_id;
-
-    // Revalidate all items before submission
-    const isValid = await revalidateAllItems();
-    if (!isValid) {
-      return;
     }
 
     setLoading(true);
@@ -359,7 +343,7 @@ export function AdminBorrowPage() {
 
     try {
       // Convert items to the format expected by the API
-      const apiItems = items.map((it) => ({
+      const apiItems = validatedItems.map((it) => ({
         book_id: it.book_id,
         copies_serial: it.copies_serial,
       }));
@@ -371,7 +355,6 @@ export function AdminBorrowPage() {
       };
       if (reservationData?.reservation_id) {
         borrowPayload.reservation_id = reservationData.reservation_id;
-        // Debug: log reservation_id being sent
         console.log('Sending reservation_id:', reservationData.reservation_id);
       } else {
         console.log('No reservation_id to send');
@@ -381,13 +364,14 @@ export function AdminBorrowPage() {
       setResult(res);
       // Clear the list after successful submission
       setItems([]);
+      itemsRef.current = []; // 清除 ref
       setBookIdInput('');
       setCopySerialInput('');
+      setMissingBooks([]); // 清除缺少的書籍記錄
       // Clear reservation data after successful borrow
       if (reservationData) {
         setReservationData(null);
       }
-      // Note: Keep memberDetail so admin can continue adding books for the same member
     } catch (e: any) {
       const { code: errorCode, message: errorMsg } = parseError(e);
       setError(getErrorMessage(errorCode, errorMsg));
@@ -427,7 +411,20 @@ export function AdminBorrowPage() {
       const preview = await adminApi.getBorrowPreview(token, mid, bookId, copiesSerial);
       
       // Add item to list with all details
-      setItems([...items, preview]);
+      setItems((prevItems) => {
+        const newItems = [...prevItems, preview];
+        itemsRef.current = newItems; // 同步更新 ref
+        console.log('Added book to list:', { bookId, copiesSerial, newItemsCount: newItems.length });
+        return newItems;
+      });
+      
+      // 清除該書籍的缺少標記（如果有的話）
+      setMissingBooks((prevMissing) => {
+        const filtered = prevMissing.filter((id) => Number(id) !== Number(bookId));
+        console.log('Updated missing books:', { bookId, prevMissing, filtered });
+        return filtered;
+      });
+      
       setError(null);
     } catch (e: any) {
       // Handle different error types
@@ -458,6 +455,7 @@ export function AdminBorrowPage() {
                   setMemberId(e.target.value);
                   setMemberDetail(null); // Clear member detail when ID changes
                   setItems([]); // Clear items when member changes
+                  itemsRef.current = []; // 清除 ref
                 }}
                 disabled={loading || validating || confirmingMember}
                 placeholder="請輸入會員 ID"
@@ -517,8 +515,24 @@ export function AdminBorrowPage() {
               </div>
             </div>
             {reservationData.books.map((book) => {
-              const isBookInList = items.some(item => item.book_id === book.book_id);
-              const addedCount = items.filter(item => item.book_id === book.book_id).length;
+              // 統一轉成數字來比較，避免後端傳回字串/數字不一致造成判斷錯誤
+              const bookIdNum = Number(book.book_id);
+              const isBookInList = items.some(item => Number(item.book_id) === bookIdNum);
+              const addedCount = items.filter(item => Number(item.book_id) === bookIdNum).length;
+              const isMissing = missingBooks.some(id => Number(id) === bookIdNum); // 是否在提交時被標記為缺少
+              
+              // Debug log
+              if (process.env.NODE_ENV === 'development') {
+                console.log('Book status check:', {
+                  bookId: book.book_id,
+                  isBookInList,
+                  addedCount,
+                  isMissing,
+                  itemsCount: items.length,
+                  items: items.map(i => ({ book_id: i.book_id, copies_serial: i.copies_serial }))
+                });
+              }
+              
               return (
                 <div
                   key={book.book_id}
@@ -528,8 +542,8 @@ export function AdminBorrowPage() {
                     alignItems: 'center',
                     padding: '0.75rem',
                     marginBottom: '0.5rem',
-                    backgroundColor: isBookInList ? '#f0fdf4' : '#fff',
-                    border: isBookInList ? '1px solid #10b981' : '1px solid #e5e7eb',
+                    backgroundColor: isBookInList ? '#f0fdf4' : (isMissing ? '#fef2f2' : '#fff'),
+                    border: isBookInList ? '1px solid #10b981' : (isMissing ? '1px solid #ef4444' : '1px solid #e5e7eb'),
                     borderRadius: '4px',
                   }}
                 >
@@ -540,9 +554,14 @@ export function AdminBorrowPage() {
                           ✓ 已加入 ({addedCount} 本)
                         </span>
                       )}
-                      {!isBookInList && (
+                      {!isBookInList && !isMissing && (
+                        <span style={{ color: '#666', fontWeight: '500', fontSize: '0.875rem' }}>
+                          待加入
+                        </span>
+                      )}
+                      {!isBookInList && isMissing && (
                         <span style={{ color: '#ef4444', fontWeight: '600', fontSize: '0.875rem' }}>
-                          ⚠ 尚未加入
+                          ⚠ 尚未辦理
                         </span>
                       )}
                     </div>
@@ -632,70 +651,46 @@ export function AdminBorrowPage() {
           </div>
         )}
 
-         {/* Book input section - only show when NOT from reservation and member is confirmed */}
-         {!reservationData && memberDetail && (
-           <div className="form-row">
-             <div className="form-field">
-               <label className="form-label">Book ID</label>
-               <input
-                 className="form-input"
-                 value={bookIdInput}
-                 onChange={(e) => handleBookIdChange(e.target.value)}
-                 disabled={loading || validating || addingItem || loadingCopies || !memberDetail}
-                 placeholder="請輸入書籍 ID"
-               />
-               {loadingCopies && (
-                 <div style={{ fontSize: '0.875rem', color: '#666', marginTop: '0.25rem' }}>
-                   載入中...
-                 </div>
-               )}
-               {selectedBookName && !loadingCopies && (
-                 <div style={{ fontSize: '0.875rem', color: '#059669', marginTop: '0.25rem' }}>
-                   書名: {selectedBookName}
-                 </div>
-               )}
-             </div>
-             {availableCopies.length > 0 && (
-               <div className="form-field">
-                 <label className="form-label">Copies Serial</label>
-                 <select
-                   className="form-input"
-                   value={copySerialInput}
-                   onChange={(e) => setCopySerialInput(e.target.value)}
-                   disabled={loading || validating || addingItem || !memberDetail}
-                   style={{ 
-                     padding: '0.5rem',
-                     borderRadius: '4px',
-                     border: '1px solid #d1d5db',
-                     backgroundColor: '#fff',
-                     fontSize: '1rem'
-                   }}
-                 >
-                   <option value="">請選擇副本序號</option>
-                   {availableCopies.map((copy) => (
-                     <option key={copy.copies_serial} value={copy.copies_serial}>
-                       {copy.copies_serial} (書況: {copy.book_condition}, 租金: {copy.rental_price})
-                     </option>
-                   ))}
-                 </select>
-               </div>
-             )}
-             {availableCopies.length > 0 && (
-               <div className="form-field" style={{ justifyContent: 'flex-end' }}>
-                 <button
-                   type="button"
-                   className="btn btn-secondary"
-                   onClick={addItem}
-                   disabled={loading || validating || addingItem || !memberDetail || !copySerialInput}
-                 >
-                   {addingItem ? '加入中...' : '加入列表'}
-                 </button>
-               </div>
-             )}
-           </div>
-         )}
+        {/* Book input section - only show when NOT from reservation and member is confirmed */}
+        {!reservationData && memberDetail && (
+          <div className="form-row">
+            <div className="form-field">
+              <label className="form-label">Book ID</label>
+              <input
+                className="form-input"
+                value={bookIdInput}
+                onChange={(e) => setBookIdInput(e.target.value)}
+                disabled={loading || validating || addingItem || !memberDetail}
+                placeholder="請輸入書籍 ID"
+              />
+            </div>
+            <div className="form-field">
+              <label className="form-label">Copies Serial</label>
+              <input
+                className="form-input"
+                value={copySerialInput}
+                onChange={(e) => setCopySerialInput(e.target.value)}
+                disabled={loading || validating || addingItem || !memberDetail}
+                placeholder="請輸入副本序號"
+              />
+            </div>
+            <div className="form-field" style={{ justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={addItem}
+                disabled={loading || validating || addingItem || !memberDetail}
+              >
+                {addingItem ? '加入中...' : '加入列表'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Items list */}
         {items.length > 0 && (
-          <>
+          <div style={{ marginTop: '1.5rem' }}>
+            <div className="card-title" style={{ marginBottom: '1rem' }}>借書列表</div>
             <table className="table">
               <thead>
                 <tr>
@@ -708,20 +703,19 @@ export function AdminBorrowPage() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((it, idx) => (
-                  <tr key={`${it.book_id}-${it.copies_serial}-${idx}`}>
-                    <td>{it.book_id}</td>
-                    <td>{it.copies_serial}</td>
-                    <td>{it.book_name}</td>
-                    <td>{it.status}</td>
-                    <td>{it.rental_fee}</td>
+                {items.map((item, index) => (
+                  <tr key={`${item.book_id}-${item.copies_serial}-${index}`}>
+                    <td>{item.book_id}</td>
+                    <td>{item.copies_serial}</td>
+                    <td>{item.book_name}</td>
+                    <td>{item.status}</td>
+                    <td>{item.rental_fee}</td>
                     <td>
                       <button
                         type="button"
                         className="btn btn-secondary"
-                        onClick={() => removeItem(idx)}
+                        onClick={() => removeItem(index)}
                         disabled={loading || validating}
-                        style={{ padding: '4px 8px', fontSize: '12px' }}
                       >
                         移除
                       </button>
@@ -729,36 +723,33 @@ export function AdminBorrowPage() {
                   </tr>
                 ))}
               </tbody>
-              <tfoot>
-                <tr>
-                  <td colSpan={4} style={{ textAlign: 'right', fontWeight: 'bold' }}>
-                    總租金：
-                  </td>
-                  <td style={{ fontWeight: 'bold' }}>{totalRentalFee}</td>
-                  <td></td>
-                </tr>
-              </tfoot>
             </table>
-          </>
+            <div style={{ marginTop: '1rem', textAlign: 'right', fontSize: '1.1rem', fontWeight: '600' }}>
+              總租金: {totalRentalFee}
+            </div>
+          </div>
         )}
-        {memberDetail && (
+
+        {/* Submit button */}
+        <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
           <button
             type="submit"
             className="btn btn-primary"
-            disabled={loading || validating || items.length === 0 || !memberDetail}
+            disabled={loading || validating || items.length === 0}
           >
-            {validating ? '驗證中...' : loading ? '處理中...' : '辦理借書'}
+            {loading ? '處理中...' : '辦理借書'}
           </button>
+        </div>
+
+        {error && <div className="error-text" style={{ marginTop: '1rem' }}>{error}</div>}
+        {result && (
+          <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#f0fdf4', borderRadius: '8px', border: '1px solid #10b981' }}>
+            <div style={{ fontWeight: '600', marginBottom: '0.5rem', color: '#10b981' }}>借書成功！</div>
+            <div>借書 ID: {result.loan_id}</div>
+            <div>總租金: {result.total_rental_fee}</div>
+          </div>
         )}
       </form>
-      {result && (
-        <div className="text-muted">
-          完成借書，Loan ID: {result.loan_id}，總租金: {result.final_price}，會員新餘額:{' '}
-          {result.member?.balance}
-        </div>
-      )}
-      {error && <div className="error-text">{error}</div>}
     </div>
   );
 }
-

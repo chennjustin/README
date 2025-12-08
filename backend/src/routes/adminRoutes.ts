@@ -2959,7 +2959,7 @@ async function processReturnItem(
   copiesSerial: number,
   finalCondition: string | undefined,
   lost: boolean
-): Promise<{ success: boolean; total_add_fee?: number; error?: string }> {
+): Promise<{ success: boolean; total_add_fee?: number; error?: string; member_id?: number; final_balance?: number }> {
   try {
     // Lock the loan record and copy
     const recordSql = `
@@ -3151,10 +3151,15 @@ async function processReturnItem(
         WHERE member_id = $2
         RETURNING balance
       `;
-      await client.query(updMemberSql, [totalAddFee, rec.member_id]);
+      const balanceRes = await client.query(updMemberSql, [totalAddFee, rec.member_id]);
     }
 
-    return { success: true, total_add_fee: totalAddFee };
+    // Get final balance after deduction
+    const finalBalanceSql = `SELECT balance FROM MEMBER WHERE member_id = $1`;
+    const finalBalanceRes = await client.query(finalBalanceSql, [rec.member_id]);
+    const finalBalance = finalBalanceRes.rowCount > 0 ? Number(finalBalanceRes.rows[0].balance) : rec.balance - totalAddFee;
+
+    return { success: true, total_add_fee: totalAddFee, member_id: rec.member_id, final_balance: finalBalance };
   } catch (err: any) {
     return { success: false, error: err.message || '處理還書時發生錯誤' };
   }
@@ -3206,6 +3211,8 @@ adminRouter.post(
               success: returnResult.success,
               error: returnResult.error,
               total_add_fee: returnResult.total_add_fee,
+              member_id: returnResult.member_id,
+              final_balance: returnResult.final_balance,
             };
           })
         );
@@ -3213,10 +3220,41 @@ adminRouter.post(
         const successCount = results.filter((r) => r.success).length;
         const failCount = results.filter((r) => !r.success).length;
 
+        // Collect unique member IDs from successful returns
+        const successfulMemberIds = new Set<number>();
+        results.forEach((r) => {
+          if (r.success && r.member_id) {
+            successfulMemberIds.add(r.member_id);
+          }
+        });
+
+        // Query member information for successful returns
+        const memberInfoMap = new Map<number, { member_id: number; name: string; balance: number }>();
+        if (successfulMemberIds.size > 0) {
+          const memberIdsArray = Array.from(successfulMemberIds);
+          const memberInfoSql = `
+            SELECT member_id, name, balance
+            FROM MEMBER
+            WHERE member_id = ANY($1)
+          `;
+          const memberInfoRes = await client.query(memberInfoSql, [memberIdsArray]);
+          memberInfoRes.rows.forEach((row: any) => {
+            memberInfoMap.set(row.member_id, {
+              member_id: row.member_id,
+              name: row.name,
+              balance: Number(row.balance),
+            });
+          });
+        }
+
+        // Convert map to array
+        const member_info = Array.from(memberInfoMap.values());
+
         return {
           success_count: successCount,
           fail_count: failCount,
           results,
+          member_info,
         };
       });
 
