@@ -9,6 +9,9 @@ export function MemberLoansActivePage() {
   const [items, setItems] = useState<LoanItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Track renew statistics for current session
+  const [renewStats, setRenewStats] = useState({ success: 0, failed: 0 });
+  const [lastRenewMessage, setLastRenewMessage] = useState<string | null>(null);
 
   const load = async () => {
     if (!memberId) {
@@ -36,11 +39,33 @@ export function MemberLoansActivePage() {
     if (!memberId) return;
     try {
       await memberApi.renewLoan(memberId, loanId, bookId, copiesSerial);
+      // Update success statistics
+      setRenewStats(prev => ({ ...prev, success: prev.success + 1 }));
+      setLastRenewMessage('續借成功，扣款 10 元');
+      // Clear error state on success
+      setError(null);
       await load();
     } catch (e: any) {
-      setError(e.message);
+      // Update failed statistics
+      setRenewStats(prev => ({ ...prev, failed: prev.failed + 1 }));
+      const errorMessage = e.message || '續借失敗';
+      setLastRenewMessage(errorMessage);
+      setError(errorMessage);
     }
   };
+
+  // Auto-hide statistics message after 3 seconds
+  useEffect(() => {
+    if (renewStats.success > 0 || renewStats.failed > 0) {
+      const timer = setTimeout(() => {
+        setRenewStats({ success: 0, failed: 0 });
+        setLastRenewMessage(null);
+        setError(null);
+      }, 3000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [renewStats.success, renewStats.failed]);
 
   // 檢查是否可以續借
   const canRenew = (item: LoanItem): boolean => {
@@ -78,8 +103,25 @@ export function MemberLoansActivePage() {
       {!memberId && <div className="text-muted">請先在「個人總覽」設定 member_id。</div>}
       {memberId && (
         <>
+          {/* Display renew statistics */}
+          {(renewStats.success > 0 || renewStats.failed > 0) && (
+            <div style={{ 
+              marginBottom: '1rem', 
+              padding: '0.75rem', 
+              backgroundColor: '#f0f9ff', 
+              border: '1px solid #bae6fd', 
+              borderRadius: '6px'
+            }}>
+              <strong>本次續借成功 {renewStats.success} 筆、失敗 {renewStats.failed} 筆</strong>
+              {lastRenewMessage && (
+                <div style={{ marginTop: '0.25rem', fontSize: '0.875rem', color: '#6b7280' }}>
+                  {lastRenewMessage}
+                </div>
+              )}
+            </div>
+          )}
           {loading && <div className="text-muted">載入中...</div>}
-          {error && <div className="error-text">{error}</div>}
+          {error && !lastRenewMessage && <div className="error-text">{error}</div>}
           {!loading && items.length === 0 && (
             <div className="text-muted">目前沒有借閱中的書。</div>
           )}
