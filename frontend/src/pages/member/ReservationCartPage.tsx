@@ -4,6 +4,7 @@ import { useReservationCart } from '../../context/ReservationCartContext';
 import { useMember } from '../../context/MemberContext';
 import { memberApi } from '../../api/memberApi';
 import { MemberProfile } from '../../types';
+import { ReservationSuccessModal } from '../../components/ReservationSuccessModal';
 
 export function ReservationCartPage() {
   const { memberId } = useMember();
@@ -12,6 +13,8 @@ export function ReservationCartPage() {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [reservedItems, setReservedItems] = useState<typeof items>([]);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -64,13 +67,22 @@ export function ReservationCartPage() {
     try {
       const bookIds = items.map((item) => item.book_id);
       await memberApi.createReservation(memberId, bookIds);
+      // Store reserved items for display in success modal
+      setReservedItems([...items]);
       clearCart();
-      navigate('/member/reservations');
+      // Show success modal instead of navigating immediately
+      setShowSuccessModal(true);
     } catch (e: any) {
       setError(e.message || '預約失敗');
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleSuccessModalClose = () => {
+    setShowSuccessModal(false);
+    // Navigate to reservations page after closing modal
+    navigate('/member/reservations');
   };
 
   return (
@@ -145,6 +157,11 @@ export function ReservationCartPage() {
           )}
         </>
       )}
+      <ReservationSuccessModal
+        isOpen={showSuccessModal}
+        onClose={handleSuccessModalClose}
+        items={reservedItems}
+      />
     </div>
   );
 }
