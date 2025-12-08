@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { booksApi } from '../../api/booksApi';
 import {
   TopBook,
@@ -83,8 +84,14 @@ function useAnimatedNumber(target: number, duration: number = 1500) {
 }
 
 export function AdminStatsPage() {
-  // 月份選擇器狀態（初始為空，需要用戶選擇）
-  const [selectedMonth, setSelectedMonth] = useState<string>('');
+  // 月份選擇器狀態（預設為當前月份）
+  const getCurrentMonth = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    return `${year}-${month}`;
+  };
+  const [selectedMonth, setSelectedMonth] = useState<string>(getCurrentMonth());
 
   // 數據狀態
   const [summary, setSummary] = useState<StatsSummary | null>(null);
@@ -145,18 +152,39 @@ export function AdminStatsPage() {
     setSelectedMonth(e.target.value);
   };
 
-  // 按類別分組熱門類別按等級的數據
-  const categoriesGrouped = categoriesByLevel.reduce((acc, item) => {
-    if (!acc[item.category_id]) {
-      acc[item.category_id] = {
-        category_id: item.category_id,
-        category_name: item.category_name,
-        levels: [],
+  // 按會員等級分組熱門類別，每個等級取前3名
+  const categoriesByLevelGrouped = categoriesByLevel.reduce((acc, item) => {
+    if (!acc[item.level_id]) {
+      acc[item.level_id] = {
+        level_id: item.level_id,
+        level_name: item.level_name,
+        categories: [],
       };
     }
-    acc[item.category_id].levels.push(item);
+    acc[item.level_id].categories.push(item);
     return acc;
-  }, {} as Record<number, { category_id: number; category_name: string; levels: CategoryByLevel[] }>);
+  }, {} as Record<number, { level_id: number; level_name: string; categories: CategoryByLevel[] }>);
+
+  // 等級排序順序：金、同、銀
+  const levelOrder: Record<string, number> = {
+    '金': 1,
+    '同': 2,
+    '銀': 3,
+  };
+
+  // 對每個等級的類別按借閱次數排序，取前3名，並按等級順序排序
+  const topCategoriesByLevel = Object.values(categoriesByLevelGrouped)
+    .map((group) => ({
+      ...group,
+      categories: group.categories
+        .sort((a, b) => b.borrow_count - a.borrow_count)
+        .slice(0, 3),
+    }))
+    .sort((a, b) => {
+      const orderA = levelOrder[a.level_name] || 999;
+      const orderB = levelOrder[b.level_name] || 999;
+      return orderA - orderB;
+    });
 
   return (
     <>
@@ -197,19 +225,7 @@ export function AdminStatsPage() {
             />
           </label>
         </div>
-        {!selectedMonth && (
-          <div style={{ 
-            marginTop: '1.5rem', 
-            padding: '1rem', 
-            backgroundColor: '#f9fafb', 
-            borderRadius: '8px', 
-            textAlign: 'center',
-            animation: 'fadeIn 0.3s ease-out',
-          }}>
-            <p style={{ margin: 0, fontSize: '0.95rem', color: '#6b7280' }}>請選擇月份以查看統計數據</p>
-          </div>
-        )}
-        {selectedMonth && loading && (
+        {loading && (
           <div style={{ marginTop: '1.5rem', textAlign: 'center' }}>
             <div style={{ 
               display: 'inline-block', 
@@ -274,7 +290,7 @@ export function AdminStatsPage() {
       {/* 熱門書籍 - 只在選擇月份時顯示 */}
       {selectedMonth && (
         <div className="card">
-          <div className="card-title">熱門書籍（依借閱次數）</div>
+          <div className="card-title">熱門書籍</div>
           {topBooks.length === 0 && !loading && <div className="text-muted">沒有資料。</div>}
           {topBooks.length > 0 && (
           <table className="table">
@@ -291,7 +307,24 @@ export function AdminStatsPage() {
               {topBooks.map((b, index) => (
                 <tr key={b.book_id}>
                   <td>{index + 1}</td>
-                  <td>{b.name}</td>
+                  <td>
+                    <Link
+                      to={`/admin/books/${b.book_id}`}
+                      style={{
+                        color: 'var(--primary-green)',
+                        textDecoration: 'none',
+                        fontWeight: '500',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.textDecoration = 'underline';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.textDecoration = 'none';
+                      }}
+                    >
+                      {b.name}
+                    </Link>
+                  </td>
                   <td>{b.author}</td>
                   <td>{b.publisher || '-'}</td>
                   <td>{b.borrow_count}</td>
@@ -306,7 +339,7 @@ export function AdminStatsPage() {
       {/* 熱門類別 - 只在選擇月份時顯示 */}
       {selectedMonth && (
         <div className="card" style={{ animation: 'fadeInUp 0.5s ease-out' }}>
-          <div className="card-title">熱門類別（依借閱次數）</div>
+          <div className="card-title">熱門類別</div>
           {topCategories.length === 0 && !loading && <div className="text-muted">沒有資料。</div>}
           {topCategories.length > 0 && (
           <table className="table">
@@ -331,33 +364,61 @@ export function AdminStatsPage() {
         </div>
       )}
 
-      {/* 熱門類別按會員等級分組 - 只在選擇月份且有數據時顯示 */}
-      {selectedMonth && Object.keys(categoriesGrouped).length > 0 && (
+      {/* 會員等級與其熱門類別 - 只在選擇月份且有數據時顯示 */}
+      {selectedMonth && topCategoriesByLevel.length > 0 && (
         <div className="card" style={{ animation: 'fadeInUp 0.5s ease-out' }}>
-          <div className="card-title">熱門類別按會員等級分組</div>
-          {Object.values(categoriesGrouped).map((group) => (
-            <div key={group.category_id} style={{ marginBottom: '1.5rem' }}>
-              <h4 style={{ marginBottom: '0.5rem', fontSize: '1rem', fontWeight: 'bold' }}>
-                {group.category_name}
-              </h4>
-              <table className="table" style={{ marginLeft: '1rem' }}>
-                <thead>
-                  <tr>
-                    <th>會員等級</th>
-                    <th>借閱次數</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {group.levels.map((item) => (
-                    <tr key={`${item.category_id}-${item.level_id}`}>
-                      <td>{item.level_name}</td>
-                      <td>{item.borrow_count}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ))}
+          <div className="card-title">會員等級與其熱門類別</div>
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', 
+            gap: '1.5rem',
+            marginTop: '1rem',
+          }}>
+            {topCategoriesByLevel.map((group) => (
+              <div 
+                key={group.level_id} 
+                style={{ 
+                  background: '#f9fafb',
+                  borderRadius: '8px',
+                  padding: '1rem',
+                  border: '1px solid #e5e7eb',
+                }}
+              >
+                <h4 style={{ 
+                  marginBottom: '0.75rem', 
+                  fontSize: '1.125rem', 
+                  fontWeight: 'bold', 
+                  color: '#111827',
+                  paddingBottom: '0.5rem',
+                  borderBottom: '2px solid #10b981',
+                }}>
+                  {group.level_name}
+                </h4>
+                {group.categories.length === 0 ? (
+                  <div className="text-muted" style={{ textAlign: 'center', padding: '1rem' }}>沒有資料。</div>
+                ) : (
+                  <table className="table" style={{ margin: 0, width: '100%' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ width: '60px' }}>排名</th>
+                        <th>類別</th>
+                        <th style={{ width: '100px', textAlign: 'right' }}>借閱次數</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.categories.map((item, index) => (
+                        <tr key={`${item.level_id}-${item.category_id}`}>
+                          <td style={{ textAlign: 'center' }}>{index + 1}</td>
+                          <td>{item.category_name}</td>
+                          <td style={{ textAlign: 'right' }}>{item.borrow_count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </>
