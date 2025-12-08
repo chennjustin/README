@@ -12,6 +12,10 @@ export function AdminReservationsPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
+  
   // Search related state
   const [searchType, setSearchType] = useState<'member_id' | 'book_name'>('member_id');
   const [searchValue, setSearchValue] = useState('');
@@ -43,6 +47,8 @@ export function AdminReservationsPage() {
 
   useEffect(() => {
     load();
+    // Reset to first page when status or search params change
+    setCurrentPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, status, activeSearchParams]);
 
@@ -89,6 +95,29 @@ export function AdminReservationsPage() {
     setSearchValue('');
     setActiveSearchParams(undefined);
     setSearchError(null);
+    setCurrentPage(1);
+  };
+
+  // Calculate pagination
+  const totalPages = Math.ceil(data.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const currentData = data.slice(startIndex, endIndex);
+
+  const handlePreviousPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+      // Scroll to top of table
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const handleNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1);
+      // Scroll to top of table
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   const handleBorrow = (reservation: any) => {
@@ -181,43 +210,90 @@ export function AdminReservationsPage() {
       {error && <div className="error-text">{error}</div>}
       {data.length === 0 && !loading && <div className="text-muted">沒有資料。</div>}
       {data.length > 0 && (
-        <table className="table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>會員</th>
-              <th>日期</th>
-              <th>狀態</th>
-              <th>書籍</th>
-              <th style={{ minWidth: '120px', width: '120px' }}>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.map((r) => (
-              <tr key={r.reservation_id}>
-                <td>{r.reservation_id}</td>
-                <td>{r.member_name}</td>
-                <td>{formatDate(r.reserve_date)}</td>
-                <td>{r.status}</td>
-                <td>
-                  {r.books?.map((b: any) => (
-                    <div key={b.book_id}>{b.name}</div>
-                  ))}
-                </td>
-                <td style={{ minWidth: '120px', width: '120px', whiteSpace: 'nowrap' }}>
-                  {r.status === 'Active' && (
-                    <button
-                      className="btn btn-primary"
-                      onClick={() => handleBorrow(r)}
-                    >
-                      辦理借書
-                    </button>
-                  )}
-                </td>
+        <>
+          <div style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="text-muted">
+              共 {data.length} 筆資料，第 {currentPage} / {totalPages} 頁
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <button
+                className="btn btn-secondary"
+                onClick={handlePreviousPage}
+                disabled={currentPage === 1 || loading}
+              >
+                上一頁
+              </button>
+              <span style={{ minWidth: '80px', textAlign: 'center' }}>
+                第 {currentPage} / {totalPages} 頁
+              </span>
+              <button
+                className="btn btn-secondary"
+                onClick={handleNextPage}
+                disabled={currentPage === totalPages || loading}
+              >
+                下一頁
+              </button>
+            </div>
+          </div>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>會員</th>
+                <th>日期</th>
+                <th>狀態</th>
+                <th>書籍</th>
+                <th style={{ minWidth: '120px', width: '120px' }}>操作</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {currentData.map((r) => (
+                <tr key={r.reservation_id}>
+                  <td>{r.reservation_id}</td>
+                  <td>{r.member_name}</td>
+                  <td>{formatDate(r.reserve_date)}</td>
+                  <td>{r.status}</td>
+                  <td>
+                    {r.books?.map((b: any) => (
+                      <div key={b.book_id}>{b.name}</div>
+                    ))}
+                  </td>
+                  <td style={{ minWidth: '120px', width: '120px', whiteSpace: 'nowrap' }}>
+                    {r.status === 'Active' && (
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => handleBorrow(r)}
+                      >
+                        辦理借書
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {totalPages > 1 && (
+            <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem' }}>
+              <button
+                className="btn btn-secondary"
+                onClick={handlePreviousPage}
+                disabled={currentPage === 1 || loading}
+              >
+                上一頁
+              </button>
+              <span style={{ minWidth: '80px', textAlign: 'center' }}>
+                第 {currentPage} / {totalPages} 頁
+              </span>
+              <button
+                className="btn btn-secondary"
+                onClick={handleNextPage}
+                disabled={currentPage === totalPages || loading}
+              >
+                下一頁
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
