@@ -259,8 +259,8 @@ export function AdminReturnPage() {
       {/* Search Section */}
       <div style={{ marginBottom: '2rem' }}>
         <form onSubmit={handleSearch}>
-          <div className="form-row">
-            <div className="form-field">
+        <div className="form-row">
+          <div className="form-field">
               <label className="form-label">搜尋類型</label>
               <select
                 className="form-select"
@@ -279,14 +279,14 @@ export function AdminReturnPage() {
               <label className="form-label">
                 {searchType === 'loan_id' ? 'Book Loan ID' : 'Member ID'}
               </label>
-              <input
-                className="form-input"
+            <input
+              className="form-input"
                 type="number"
                 value={searchValue}
                 onChange={(e) => setSearchValue(e.target.value)}
                 placeholder={`請輸入${searchType === 'loan_id' ? 'Book Loan ID' : 'Member ID'}`}
-              />
-            </div>
+            />
+          </div>
             <div className="form-field" style={{ alignSelf: 'flex-end' }}>
               <button type="submit" className="btn btn-primary" disabled={searchLoading}>
                 {searchLoading ? '搜尋中...' : '搜尋'}
@@ -303,7 +303,6 @@ export function AdminReturnPage() {
           <h3 style={{ marginBottom: '1rem', fontSize: '1.1rem', fontWeight: '600' }}>搜尋結果</h3>
           {searchResults.map((loan) => {
             const isExpanded = expandedLoans.has(loan.loan_id);
-            const returnStatus = getReturnStatus(loan.max_due_date);
             return (
               <div
                 key={loan.loan_id}
@@ -330,17 +329,7 @@ export function AdminReturnPage() {
                   <div style={{ flex: 1 }}>
                     <div>Loan ID: {loan.loan_id} | Member ID: {loan.member_id} | 會員姓名: {loan.member_name}</div>
                     <div style={{ fontSize: '0.9rem', fontWeight: '400', marginTop: '0.25rem' }}>
-                      借書日期: {formatDate(loan.loan_date)} | 應還書日期: {formatDate(loan.max_due_date)} | 還書狀態:{' '}
-                      <span
-                        style={{
-                          color: returnStatus.status === '逾期' ? '#f44336' : '#4caf50',
-                          fontWeight: '600',
-                        }}
-                      >
-                        {returnStatus.status === '逾期'
-                          ? `逾期（逾期 ${returnStatus.overdueDays} 天）`
-                          : '正常'}
-                      </span>
+                      借書日期: {formatDate(loan.loan_date)} | 應還書日期: {formatDate(loan.max_due_date)}
                     </div>
                   </div>
                   <svg
@@ -384,7 +373,22 @@ export function AdminReturnPage() {
                         <strong>原本狀態:</strong> {record.original_condition}
                       </div>
                       <div style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.25rem' }}>
-                        借出日期: {record.date_out} | 到期日期: {record.due_date}
+                        借出日期: {formatDate(record.date_out)} | 到期日期: {formatDate(record.due_date)} | 還書狀態:{' '}
+                        {(() => {
+                          const recordStatus = getReturnStatus(record.due_date);
+                          return (
+                            <span
+                              style={{
+                                color: recordStatus.status === '逾期' ? '#f44336' : '#4caf50',
+                                fontWeight: '600',
+                              }}
+                            >
+                              {recordStatus.status === '逾期'
+                                ? `逾期（逾期 ${recordStatus.overdueDays} 天）`
+                                : '正常'}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
                     {isRecordInList(record) ? (
@@ -410,7 +414,7 @@ export function AdminReturnPage() {
                     ))}
                   </div>
                 )}
-              </div>
+          </div>
             );
           })}
         </div>
@@ -437,12 +441,12 @@ export function AdminReturnPage() {
               </div>
               <div style={{ marginBottom: '0.75rem' }}>
                 <strong>原本狀態:</strong> {item.original_condition} | <strong>到期日期:</strong> {item.due_date}
-              </div>
-              <div className="form-row">
-                <div className="form-field">
-                  <label className="form-label">最終書況</label>
-                  <select
-                    className="form-select"
+        </div>
+        <div className="form-row">
+          <div className="form-field">
+            <label className="form-label">最終書況</label>
+            <select
+              className="form-select"
                     value={item.final_condition || ''}
                     onChange={(e) =>
                       handleUpdateReturnItem(
@@ -459,12 +463,12 @@ export function AdminReturnPage() {
                         {option.label}
                       </option>
                     ))}
-                  </select>
-                </div>
-                <div className="form-field">
+            </select>
+          </div>
+          <div className="form-field">
                   <label className="form-label" style={{ display: 'flex', alignItems: 'center' }}>
-                    <input
-                      type="checkbox"
+            <input
+              type="checkbox"
                       checked={item.lost}
                       onChange={(e) =>
                         handleUpdateReturnItem(
