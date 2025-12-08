@@ -324,6 +324,27 @@ export function AdminBorrowPage() {
       setError('請至少添加一筆借書項目。');
       return;
     }
+    
+    // 如果從預約進入，檢查是否所有預約的書籍都已加入借書列表
+    if (reservationData) {
+      const reservationBookIds = reservationData.books.map(b => b.book_id);
+      const borrowedBookIds = items.map(item => item.book_id);
+      
+      // 檢查是否所有預約的書籍都已加入
+      const missingBooks = reservationBookIds.filter(
+        bookId => !borrowedBookIds.includes(bookId)
+      );
+      
+      if (missingBooks.length > 0) {
+        const missingBookNames = missingBooks.map(bookId => {
+          const book = reservationData.books.find(b => b.book_id === bookId);
+          return book ? book.name : `Book ID: ${bookId}`;
+        });
+        setError(`請將預約中的所有書籍都加入借書列表。缺少：${missingBookNames.join('、')}`);
+        return;
+      }
+    }
+    
     const mid = memberDetail.member_id;
 
     // Revalidate all items before submission
@@ -487,11 +508,17 @@ export function AdminBorrowPage() {
         {/* Reservation books section - only show when from reservation and member is confirmed */}
         {reservationData && memberDetail && (
           <div style={{ marginBottom: '1.5rem', padding: '1rem', backgroundColor: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
-            <h3 style={{ marginBottom: '1rem', fontSize: '1.1rem', fontWeight: '600' }}>
-              預約書籍
-            </h3>
+            <div style={{ marginBottom: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: '600', margin: 0 }}>
+                預約書籍
+              </h3>
+              <div style={{ fontSize: '0.875rem', color: '#666' }}>
+                需加入全部 {reservationData.books.length} 本書籍才能辦理借書
+              </div>
+            </div>
             {reservationData.books.map((book) => {
               const isBookInList = items.some(item => item.book_id === book.book_id);
+              const addedCount = items.filter(item => item.book_id === book.book_id).length;
               return (
                 <div
                   key={book.book_id}
@@ -501,12 +528,24 @@ export function AdminBorrowPage() {
                     alignItems: 'center',
                     padding: '0.75rem',
                     marginBottom: '0.5rem',
-                    backgroundColor: '#fff',
-                    border: '1px solid #e5e7eb',
+                    backgroundColor: isBookInList ? '#f0fdf4' : '#fff',
+                    border: isBookInList ? '1px solid #10b981' : '1px solid #e5e7eb',
                     borderRadius: '4px',
                   }}
                 >
                   <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                      {isBookInList && (
+                        <span style={{ color: '#10b981', fontWeight: '600', fontSize: '0.875rem' }}>
+                          ✓ 已加入 ({addedCount} 本)
+                        </span>
+                      )}
+                      {!isBookInList && (
+                        <span style={{ color: '#ef4444', fontWeight: '600', fontSize: '0.875rem' }}>
+                          ⚠ 尚未加入
+                        </span>
+                      )}
+                    </div>
                     <div>
                       <strong>Book ID:</strong> {book.book_id} | <strong>書名:</strong> {book.name}
                       {book.author && ` | <strong>作者:</strong> ${book.author}`}

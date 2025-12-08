@@ -8,6 +8,7 @@ import { bookRouter } from './routes/bookRoutes';
 import { adminRouter } from './routes/adminRoutes';
 import { statsRouter } from './routes/statsRoutes';
 import { reservationRouter } from './routes/reservationRoutes';
+import { searchHistoryRouter } from './routes/searchHistoryRoutes';
 
 // 從專案根目錄讀取 .env 檔案（README 目錄）
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
@@ -26,6 +27,7 @@ app.use('/api/reservations', reservationRouter);
 app.use('/api/books', bookRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/stats', statsRouter);
+app.use('/api/search-history', searchHistoryRouter);
 
 app.use(errorHandler);
 

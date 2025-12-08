@@ -22,6 +22,7 @@ import { AdminBorrowPage } from './pages/admin/AdminBorrowPage';
 import { AdminReturnPage } from './pages/admin/AdminReturnPage';
 import { AdminReservationsPage } from './pages/admin/AdminReservationsPage';
 import { AdminStatsPage } from './pages/admin/AdminStatsPage';
+import { AdminSearchAnalyticsPage } from './pages/admin/AdminSearchAnalyticsPage';
 import { RoleSelectionPage } from './pages/RoleSelectionPage';
 
 // Protected route component for member pages
@@ -52,7 +53,7 @@ function AppShell() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const isAdmin = location.pathname.startsWith('/admin');
   const isHomePage = location.pathname === '/';
-  const { memberId, setMemberId } = useMember();
+  const { memberId, memberInfo, setMemberId } = useMember();
   const { admin, setAuth } = useAdmin();
   // Check if member is logged in (memberId exists and is valid)
   const isLoggedIn = memberId !== null && Number.isFinite(memberId) && memberId > 0;
@@ -362,6 +363,19 @@ function AppShell() {
                     </svg>
                     {!sidebarCollapsed && <span>報表 / 統計</span>}
                   </NavLink>
+                  <NavLink
+                    to="/admin/search-analytics"
+                    className={({ isActive }) =>
+                      'app-sidebar-link' + (isActive ? ' app-sidebar-link-active' : '')
+                    }
+                    title="搜尋趨勢分析"
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="11" cy="11" r="8"></circle>
+                      <path d="m21 21-4.35-4.35"></path>
+                    </svg>
+                    {!sidebarCollapsed && <span>搜尋趨勢分析</span>}
+                  </NavLink>
                   <div className="app-sidebar-divider" />
                   <button
                     className="app-sidebar-logout-btn"
@@ -403,7 +417,7 @@ function AppShell() {
               <div className="app-sidebar-profile">
                 <div className="app-sidebar-avatar">U</div>
                 <div className="app-sidebar-user-info">
-                  <div className="app-sidebar-user-name">{isAdmin ? (admin?.name || '管理員') : (isLoggedIn ? '會員' : '訪客')}</div>
+                  <div className="app-sidebar-user-name">{isAdmin ? (admin?.name || '管理員') : (isLoggedIn ? (memberInfo?.name || '會員') : '訪客')}</div>
                   <div className="app-sidebar-user-role">{isAdmin ? '管理員' : '會員'}</div>
                 </div>
               </div>
@@ -529,6 +543,14 @@ function AppShell() {
               element={
                 <ProtectedAdminRoute>
                   <AdminStatsPage />
+                </ProtectedAdminRoute>
+              }
+            />
+            <Route
+              path="/admin/search-analytics"
+              element={
+                <ProtectedAdminRoute>
+                  <AdminSearchAnalyticsPage />
                 </ProtectedAdminRoute>
               }
             />

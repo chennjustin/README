@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { query } from '../db';
+import { getSearchHistoryCollection } from '../mongodb';
 import { ApiResponse } from '../types';
 
 export const bookRouter = Router();
@@ -32,14 +33,8 @@ bookRouter.get(
           WHERE bc2.book_id = b.book_id AND bc2.category_id = $${params.length}
         )`);
       }
-      if (minPrice) {
-        params.push(Number(minPrice));
-        conditions.push(`b.price >= $${params.length}`);
-      }
-      if (maxPrice) {
-        params.push(Number(maxPrice));
-        conditions.push(`b.price <= $${params.length}`);
-      }
+      // 價格篩選需要篩選租金價格，不是定價，所以先不加入 conditions
+      // 等子查詢建立後，在 HAVING 子句中處理
 
       const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
@@ -57,6 +52,33 @@ bookRouter.get(
         discountSelect = 'COALESCE(ml.discount_rate, 1.0) AS discount_rate';
         discountGroupBy = ', ml.discount_rate';
         estimatedPriceExpr = `COALESCE(available_stats.min_rental_price, 0) * COALESCE(ml.discount_rate, 1.0) AS estimated_min_rental_price`;
+      }
+
+      // 處理價格篩選（篩選租金價格，使用 HAVING 子句）
+      let priceFilterHaving = '';
+      if (minPrice || maxPrice) {
+        const havingConditions: string[] = [];
+        if (minPrice) {
+          const minPriceVal = Number(minPrice);
+          if (memberId) {
+            // 有會員折扣時，篩選折扣後的價格
+            havingConditions.push(`COALESCE(available_stats.min_rental_price, 0) * COALESCE(ml.discount_rate, 1.0) >= ${minPriceVal}`);
+          } else {
+            // 無會員折扣時，篩選原始租金價格
+            havingConditions.push(`COALESCE(available_stats.min_rental_price, 0) >= ${minPriceVal}`);
+          }
+        }
+        if (maxPrice) {
+          const maxPriceVal = Number(maxPrice);
+          if (memberId) {
+            havingConditions.push(`COALESCE(available_stats.min_rental_price, 0) * COALESCE(ml.discount_rate, 1.0) <= ${maxPriceVal}`);
+          } else {
+            havingConditions.push(`COALESCE(available_stats.min_rental_price, 0) <= ${maxPriceVal}`);
+          }
+        }
+        if (havingConditions.length > 0) {
+          priceFilterHaving = `HAVING ${havingConditions.join(' AND ')}`;
+        }
       }
 
       const sql = `
@@ -97,11 +119,40 @@ bookRouter.get(
           available_stats.available_count,
           available_stats.min_rental_price
           ${discountGroupBy}
+        ${priceFilterHaving}
         ORDER BY b.book_id
       `;
 
       const result = await query(sql, params);
-      return res.json({ success: true, data: result.rows });
+      const books = result.rows;
+
+      // 如果有 memberId，保存搜尋記錄到 MongoDB
+      if (memberId && Number.isFinite(Number(memberId))) {
+        try {
+          const collection = await getSearchHistoryCollection();
+          if (collection) {
+            const searchRecord = {
+              member_id: Number(memberId),
+              search_query: keyword || '',
+              search_date: new Date(),
+              book_ids: books.map((b: any) => b.book_id),
+              filters: {
+                category: categoryId ? Number(categoryId) : null,
+                author: author || null,
+                publisher: publisher || null,
+                min_price: minPrice ? Number(minPrice) : null,
+                max_price: maxPrice ? Number(maxPrice) : null,
+              },
+            };
+            await collection.insertOne(searchRecord);
+          }
+        } catch (mongoError) {
+          // MongoDB 錯誤不影響搜尋結果，只記錄日誌
+          console.error('Failed to save search history:', mongoError);
+        }
+      }
+
+      return res.json({ success: true, data: books });
     } catch (err) {
       next(err);
     }

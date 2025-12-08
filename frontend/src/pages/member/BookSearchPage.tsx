@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { booksApi } from '../../api/booksApi';
 import { useMember } from '../../context/MemberContext';
+import { searchHistoryApi, SearchHistoryItem } from '../../api/searchHistoryApi';
 import { BookSummary } from '../../types';
 import { Link } from 'react-router-dom';
 
@@ -24,6 +25,12 @@ export function BookSearchPage() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [minPrice, setMinPrice] = useState<string>('');
   const [maxPrice, setMaxPrice] = useState<string>('');
+  
+  // 搜尋歷史相關狀態
+  const [recentSearches, setRecentSearches] = useState<SearchHistoryItem[]>([]);
+  const [showRecentSearches, setShowRecentSearches] = useState(false);
+  const keywordInputRef = useRef<HTMLInputElement>(null);
+  const recentSearchesRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const loadCategories = async () => {
@@ -36,6 +43,47 @@ export function BookSearchPage() {
     };
     loadCategories();
   }, []);
+
+  // 載入最近的搜尋記錄
+  useEffect(() => {
+    if (!memberId) {
+      setRecentSearches([]);
+      return;
+    }
+
+    const loadRecentSearches = async () => {
+      try {
+        const data = await searchHistoryApi.getMemberHistory(memberId, 5);
+        // 只顯示有關鍵詞的搜尋記錄
+        const withKeywords = data.filter(item => item.search_query && item.search_query.trim() !== '');
+        setRecentSearches(withKeywords);
+      } catch (e: any) {
+        console.error('Failed to load recent searches:', e);
+      }
+    };
+    loadRecentSearches();
+  }, [memberId]);
+
+  // 點擊外部關閉最近搜尋列表
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        recentSearchesRef.current &&
+        !recentSearchesRef.current.contains(event.target as Node) &&
+        keywordInputRef.current &&
+        !keywordInputRef.current.contains(event.target as Node)
+      ) {
+        setShowRecentSearches(false);
+      }
+    };
+
+    if (showRecentSearches) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [showRecentSearches]);
 
   // 從 URL 參數讀取 categoryId
   useEffect(() => {
@@ -53,6 +101,7 @@ export function BookSearchPage() {
   }, [searchParams]);
 
   const search = async () => {
+    setShowRecentSearches(false);
     setLoading(true);
     setError(null);
     try {
@@ -72,12 +121,36 @@ export function BookSearchPage() {
         maxPrice: maxPrice ? Number(maxPrice) : undefined,
       });
       setBooks(data);
+      
+      // 搜尋成功後重新載入最近搜尋記錄
+      if (memberId) {
+        try {
+          const recentData = await searchHistoryApi.getMemberHistory(memberId, 5);
+          const withKeywords = recentData.filter(item => item.search_query && item.search_query.trim() !== '');
+          setRecentSearches(withKeywords);
+        } catch (e) {
+          // 忽略錯誤
+        }
+      }
     } catch (e: any) {
       setError(e.message);
       setBooks([]);
     } finally {
       setLoading(false);
     }
+  };
+
+  // 從最近搜尋記錄中選擇（只填入文字，不執行搜尋）
+  const selectRecentSearch = (item: SearchHistoryItem) => {
+    setKeyword(item.search_query || '');
+    // 可選：如果用戶想要，也可以填入其他篩選條件
+    // if (item.filters.author) setAuthor(item.filters.author);
+    // if (item.filters.publisher) setPublisher(item.filters.publisher);
+    // if (item.filters.category) setSelectedCategoryId(item.filters.category);
+    // if (item.filters.min_price) setMinPrice(String(item.filters.min_price));
+    // if (item.filters.max_price) setMaxPrice(String(item.filters.max_price));
+    setShowRecentSearches(false);
+    // 只填入文字，不執行搜尋，讓用戶自己按搜尋按鈕
   };
 
   // 當 URL 參數改變時自動搜尋
@@ -91,16 +164,77 @@ export function BookSearchPage() {
       <div className="card">
         <div className="card-title">書籍搜尋</div>
         <div className="form-row">
-          <div className="form-field">
+          <div className="form-field" style={{ position: 'relative' }}>
             <label className="form-label">書名關鍵字</label>
             <input
+              ref={keywordInputRef}
               className="form-input"
               value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') search();
+              onChange={(e) => {
+                setKeyword(e.target.value);
+                setShowRecentSearches(recentSearches.length > 0 && e.target.value === '');
               }}
+              onFocus={() => {
+                if (recentSearches.length > 0 && keyword === '') {
+                  setShowRecentSearches(true);
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  setShowRecentSearches(false);
+                  search();
+                } else if (e.key === 'Escape') {
+                  setShowRecentSearches(false);
+                }
+              }}
+              placeholder="輸入書名關鍵字..."
             />
+            {showRecentSearches && recentSearches.length > 0 && (
+              <div
+                ref={recentSearchesRef}
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  marginTop: '4px',
+                  backgroundColor: '#fff',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                  zIndex: 1000,
+                  maxHeight: '300px',
+                  overflowY: 'auto',
+                }}
+              >
+                {recentSearches.map((item) => (
+                  <button
+                    key={item._id}
+                    type="button"
+                    onClick={() => selectRecentSearch(item)}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem 1rem',
+                      textAlign: 'left',
+                      border: 'none',
+                      backgroundColor: 'transparent',
+                      cursor: 'pointer',
+                      fontSize: '0.875rem',
+                      color: '#111827',
+                      borderBottom: '1px solid #f3f4f6',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = '#f9fafb';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
+                  >
+                    {item.search_query || '（無關鍵詞）'}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div className="form-field">
             <label className="form-label">作者</label>

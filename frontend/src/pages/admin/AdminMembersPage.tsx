@@ -68,6 +68,9 @@ export function AdminMembersPage() {
       // Handle specific error messages from backend
       if (e.message && e.message.includes('該會員已註冊')) {
         setError('該會員已註冊');
+      } else if (e.message && e.message.includes('最低儲值金額')) {
+        // 顯示後端返回的詳細錯誤訊息（包含最低儲值金額）
+        setError(e.message);
       } else {
         setError(e.message || '新增會員失敗');
       }

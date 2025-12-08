@@ -142,11 +142,18 @@ adminRouter.post(
         `;
         const levelRes = await client.query(levelSql, [initialBalance]);
         if (levelRes.rowCount === 0) {
+          // 查詢最低儲值金額要求
+          const minBalanceSql = `
+            SELECT MIN(min_balance_required) AS min_balance
+            FROM MEMBERSHIP_LEVEL
+          `;
+          const minBalanceRes = await client.query(minBalanceSql);
+          const minBalance = minBalanceRes.rows[0]?.min_balance || 0;
           throw {
             type: 'business',
             status: 400,
             code: 'NO_LEVEL_MATCH',
-            message: '找不到符合此餘額的會員等級',
+            message: `最低儲值金額為 ${minBalance} 元，請確認儲值金額`,
           };
         }
         const levelId = levelRes.rows[0].level_id;
@@ -1647,23 +1654,66 @@ adminRouter.post(
           `;
           await client.query(updCopySql, [item.book_id, item.copies_serial]);
           
-          // 若借的是預約的複本，更新對應的 RESERVATION 為 Fulfilled
-          if (rental.was_reserved) {
-            // PostgreSQL 不支援 UPDATE ... LIMIT 1，需要使用子查詢
-            await client.query(
-              `UPDATE RESERVATION r
-               SET status = 'Fulfilled', pickup_date = CURRENT_DATE
-               WHERE r.reservation_id = (
-                 SELECT r2.reservation_id
-                 FROM RESERVATION r2
-                 JOIN RESERVATION_RECORD rr ON r2.reservation_id = rr.reservation_id
-                 WHERE rr.book_id = $1
-                   AND r2.member_id = $2
-                   AND r2.status = 'Active'
-                 LIMIT 1
-               )`,
-              [item.book_id, member_id]
-            );
+          // 若借的是預約的複本，檢查並更新對應的 RESERVATION 狀態
+          // 注意：這裡不直接更新為 Fulfilled，而是由上面的 reservation_id 邏輯統一處理
+          // 因為需要檢查預約中的所有書籍是否都已被借出
+          // 這個邏輯保留用於處理沒有提供 reservation_id 的情況（通過 was_reserved 判斷）
+          if (rental.was_reserved && (!reservation_id || reservation_id === null || reservation_id === undefined)) {
+            // 只有在沒有提供 reservation_id 時才使用這個邏輯
+            // 查找對應的預約並檢查是否所有書籍都已借出
+            const findReservationSql = `
+              SELECT r2.reservation_id
+              FROM RESERVATION r2
+              JOIN RESERVATION_RECORD rr ON r2.reservation_id = rr.reservation_id
+              WHERE rr.book_id = $1
+                AND r2.member_id = $2
+                AND r2.status = 'Active'
+              LIMIT 1
+            `;
+            const findResRes = await client.query(findReservationSql, [item.book_id, member_id]);
+            
+            if (findResRes.rowCount && findResRes.rowCount > 0) {
+              const foundResId = findResRes.rows[0].reservation_id;
+              
+              // 檢查該預約中的所有書籍是否都已被借出
+              const reservationBooksSql = `
+                SELECT rr.book_id
+                FROM RESERVATION_RECORD rr
+                WHERE rr.reservation_id = $1
+              `;
+              const reservationBooksRes = await client.query(reservationBooksSql, [foundResId]);
+              const reservationBookIds = reservationBooksRes.rows.map((r: any) => r.book_id);
+              
+              let allBooksBorrowed = true;
+              for (const bookId of reservationBookIds) {
+                const checkBorrowedSql = `
+                  SELECT COUNT(*) > 0 AS is_borrowed
+                  FROM LOAN_RECORD lr
+                  JOIN BOOK_LOAN bl ON lr.loan_id = bl.loan_id
+                  WHERE bl.member_id = $1
+                    AND lr.book_id = $2
+                    AND lr.return_date IS NULL
+                `;
+                const checkBorrowedRes = await client.query(checkBorrowedSql, [member_id, bookId]);
+                const isBorrowedRaw = checkBorrowedRes.rows[0]?.is_borrowed;
+                const isBorrowed = isBorrowedRaw === true || isBorrowedRaw === 't' || isBorrowedRaw === 1;
+                
+                if (!isBorrowed) {
+                  allBooksBorrowed = false;
+                  break;
+                }
+              }
+              
+              // 只有當所有書籍都被借出時，才更新預約狀態為 Fulfilled
+              if (allBooksBorrowed) {
+                await client.query(
+                  `UPDATE RESERVATION
+                   SET status = 'Fulfilled', pickup_date = CURRENT_DATE
+                   WHERE reservation_id = $1`,
+                  [foundResId]
+                );
+              }
+            }
           }
         }
 
@@ -1676,7 +1726,8 @@ adminRouter.post(
         `;
         const updMemberRes = await client.query(updMemberSql, [finalPrice, member_id]);
 
-        // 如果提供了 reservation_id，更新預約狀態
+        // 如果提供了 reservation_id，檢查並更新預約狀態
+        // 只有當預約中的所有書籍都被借出時，才將預約狀態更新為 Fulfilled
         if (reservation_id !== undefined && reservation_id !== null) {
           const resId = Number(reservation_id);
           // 再次驗證 reservation_id 是有效的正整數
@@ -1692,16 +1743,53 @@ adminRouter.post(
             
             if (checkResRes.rowCount && checkResRes.rowCount > 0) {
               const reservation = checkResRes.rows[0];
-              // 只要預約狀態是 Active，就更新為 Fulfilled
-              // 不強制要求會員 ID 匹配，因為管理員可能手動修改了會員 ID
+              // 只有當預約狀態是 Active 時才處理
               if (reservation.status === 'Active') {
-                // 更新預約狀態為 Fulfilled 並設置 pickup_date
-                const updResSql = `
-                  UPDATE RESERVATION
-                  SET status = 'Fulfilled', pickup_date = CURRENT_DATE
-                  WHERE reservation_id = $1
+                // 檢查預約中的所有書籍是否都已被借出
+                // 查詢預約中的所有書籍
+                const reservationBooksSql = `
+                  SELECT rr.book_id
+                  FROM RESERVATION_RECORD rr
+                  WHERE rr.reservation_id = $1
                 `;
-                await client.query(updResSql, [resId]);
+                const reservationBooksRes = await client.query(reservationBooksSql, [resId]);
+                const reservationBookIds = reservationBooksRes.rows.map((r: any) => r.book_id);
+                
+                // 查詢本次借書的書籍 ID
+                const borrowedBookIds = items.map((it: any) => it.book_id);
+                
+                // 檢查預約中的每本書是否都已被借出
+                // 對於每本預約的書，檢查是否有對應的借閱記錄（未歸還的）
+                let allBooksBorrowed = true;
+                for (const bookId of reservationBookIds) {
+                  // 檢查該書籍是否有未歸還的借閱記錄
+                  const checkBorrowedSql = `
+                    SELECT COUNT(*) > 0 AS is_borrowed
+                    FROM LOAN_RECORD lr
+                    JOIN BOOK_LOAN bl ON lr.loan_id = bl.loan_id
+                    WHERE bl.member_id = $1
+                      AND lr.book_id = $2
+                      AND lr.return_date IS NULL
+                  `;
+                  const checkBorrowedRes = await client.query(checkBorrowedSql, [member_id, bookId]);
+                  const isBorrowedRaw = checkBorrowedRes.rows[0]?.is_borrowed;
+                  const isBorrowed = isBorrowedRaw === true || isBorrowedRaw === 't' || isBorrowedRaw === 1;
+                  
+                  if (!isBorrowed) {
+                    allBooksBorrowed = false;
+                    break;
+                  }
+                }
+                
+                // 只有當所有書籍都被借出時，才更新預約狀態為 Fulfilled
+                if (allBooksBorrowed) {
+                  const updResSql = `
+                    UPDATE RESERVATION
+                    SET status = 'Fulfilled', pickup_date = CURRENT_DATE
+                    WHERE reservation_id = $1
+                  `;
+                  await client.query(updResSql, [resId]);
+                }
               }
             }
           }

@@ -4,7 +4,7 @@ import { memberApi } from '../../api/memberApi';
 import { useMember } from '../../context/MemberContext';
 
 export function MemberLoginPage() {
-  const { memberId, setMemberId } = useMember();
+  const { memberId, setMemberInfo } = useMember();
   const navigate = useNavigate();
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -23,8 +23,12 @@ export function MemberLoginPage() {
     setError(null);
     try {
       const result = await memberApi.login(name, phone);
-      // Update context state
-      setMemberId(result.member_id);
+      // Update context state with member info
+      setMemberInfo({
+        member_id: result.member_id,
+        name: result.name,
+        phone: result.phone,
+      });
       // Immediately redirect and reload page after successful login
       window.location.href = '/member';
     } catch (e: any) {

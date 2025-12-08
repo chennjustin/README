@@ -184,12 +184,13 @@ memberRouter.delete(
 
       const result = await withTransaction(async (client) => {
         // 1. 驗證預約存在且屬於該會員
+        // 允許取消 Active 或 Fulfilled 狀態的預約（Fulfilled 可能是部分借出）
         const checkSql = `
           SELECT reservation_id, member_id, status
           FROM RESERVATION
           WHERE reservation_id = $1
             AND member_id = $2
-            AND status = 'Active'
+            AND status IN ('Active', 'Fulfilled')
           FOR UPDATE
         `;
         const checkRes = await client.query(checkSql, [reservationId, memberId]);
@@ -201,38 +202,92 @@ memberRouter.delete(
             message: '預約不存在、非該會員，或狀態不可取消',
           };
         }
-
-        // 2. 查詢 RESERVATION_RECORD 取得所有 book_id
-        const bookIdsSql = `
-          SELECT book_id 
-          FROM RESERVATION_RECORD 
-          WHERE reservation_id = $1
+        
+        const reservation = checkRes.rows[0];
+        
+        // 2. 檢查預約中是否還有未借出的書籍
+        // 如果所有書籍都已借出，則不允許取消
+        const reservationBooksSql = `
+          SELECT rr.book_id
+          FROM RESERVATION_RECORD rr
+          WHERE rr.reservation_id = $1
         `;
-        const bookIdsRes = await client.query(bookIdsSql, [reservationId]);
+        const reservationBooksRes = await client.query(reservationBooksSql, [reservationId]);
+        const reservationBookIds = reservationBooksRes.rows.map((r: any) => r.book_id);
+        
+        // 檢查每本書是否都已被借出（有未歸還的借閱記錄）
+        let allBooksBorrowed = true;
+        for (const bookId of reservationBookIds) {
+          const checkBorrowedSql = `
+            SELECT COUNT(*) > 0 AS is_borrowed
+            FROM LOAN_RECORD lr
+            JOIN BOOK_LOAN bl ON lr.loan_id = bl.loan_id
+            WHERE bl.member_id = $1
+              AND lr.book_id = $2
+              AND lr.return_date IS NULL
+          `;
+          const checkBorrowedRes = await client.query(checkBorrowedSql, [memberId, bookId]);
+          const isBorrowedRaw = checkBorrowedRes.rows[0]?.is_borrowed;
+          const isBorrowed = isBorrowedRaw === true || isBorrowedRaw === 't' || isBorrowedRaw === 1;
+          
+          if (!isBorrowed) {
+            allBooksBorrowed = false;
+            break;
+          }
+        }
+        
+        // 如果所有書籍都已借出，不允許取消
+        if (allBooksBorrowed) {
+          throw {
+            type: 'business',
+            status: 400,
+            code: 'CANNOT_CANCEL',
+            message: '預約中的所有書籍都已借出，無法取消',
+          };
+        }
 
-        // 3. 對每個 book_id，釋放該預約對應的 Reserved 複本
+        // 3. 查詢 RESERVATION_RECORD 取得所有 book_id（已在上面查詢過，這裡可以重用）
+        // 4. 對每個未借出的 book_id，釋放該預約對應的 Reserved 複本
         // 由於一個會員只能對同一本書進行一筆預約，所以該 book_id 的 reserved 複本應該就是這個預約的
         // PostgreSQL 不支援 UPDATE ... LIMIT，需要使用子查詢
-        for (const row of bookIdsRes.rows) {
-          const updateResult = await client.query(
-            `UPDATE BOOK_COPIES 
-             SET status = 'Available' 
-             WHERE ctid = (
-               SELECT ctid 
-               FROM BOOK_COPIES 
-               WHERE book_id = $1 
-                 AND status = 'Reserved'
-               LIMIT 1
-             )`,
-            [row.book_id]
-          );
-          // 如果沒有找到 reserved 複本，可能是資料不一致，但不影響取消預約的操作
-          if (updateResult.rowCount === 0) {
-            console.warn(`警告：取消預約 ${reservationId} 時，書籍 ${row.book_id} 沒有找到 reserved 複本`);
+        for (const bookId of reservationBookIds) {
+          // 檢查該書籍是否已被借出
+          const checkBorrowedSql = `
+            SELECT COUNT(*) > 0 AS is_borrowed
+            FROM LOAN_RECORD lr
+            JOIN BOOK_LOAN bl ON lr.loan_id = bl.loan_id
+            WHERE bl.member_id = $1
+              AND lr.book_id = $2
+              AND lr.return_date IS NULL
+          `;
+          const checkBorrowedRes = await client.query(checkBorrowedSql, [memberId, bookId]);
+          const isBorrowedRaw = checkBorrowedRes.rows[0]?.is_borrowed;
+          const isBorrowed = isBorrowedRaw === true || isBorrowedRaw === 't' || isBorrowedRaw === 1;
+          
+          // 只釋放未借出的書籍的複本
+          if (!isBorrowed) {
+            const updateResult = await client.query(
+              `UPDATE BOOK_COPIES 
+               SET status = 'Available' 
+               WHERE ctid = (
+                 SELECT ctid 
+                 FROM BOOK_COPIES 
+                 WHERE book_id = $1 
+                   AND status = 'Reserved'
+                 LIMIT 1
+               )`,
+              [bookId]
+            );
+            // 如果沒有找到 reserved 複本，可能是資料不一致，但不影響取消預約的操作
+            if (updateResult.rowCount === 0) {
+              console.warn(`警告：取消預約 ${reservationId} 時，書籍 ${bookId} 沒有找到 reserved 複本`);
+            }
           }
         }
 
-        // 4. 更新 RESERVATION
+        // 5. 更新 RESERVATION 狀態
+        // 如果還有未借出的書籍，狀態改回 Active；如果所有書籍都已借出或取消，狀態改為 Cancelled
+        // 但由於我們已經檢查過，這裡應該還有未借出的書籍，所以改為 Cancelled
         const updateSql = `
           UPDATE RESERVATION 
           SET status = 'Cancelled' 

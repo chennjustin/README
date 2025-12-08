@@ -16,6 +16,9 @@ export function BookDetailPage() {
   const [loading, setLoading] = useState(false);
   const { addItem, hasItem } = useReservationCart();
 
+  // 計算是否有可借的複本
+  const hasAvailableCopies = book && book.copies.some((c) => (c.available_count || 0) > 0);
+
   useEffect(() => {
     if (!bookId) return;
     const id = Number(bookId);
@@ -156,7 +159,7 @@ export function BookDetailPage() {
                       setError(e.message);
                     }
                   }}
-                  disabled={!book || book.copies.every((c) => c.available_count === 0)}
+                  disabled={!hasAvailableCopies}
                 >
                   加入預約購物車
                 </button>
@@ -211,7 +214,7 @@ export function BookDetailPage() {
                       setError(e.message);
                     }
                   }}
-                  disabled={!book || book.copies.every((c) => c.available_count === 0)}
+                  disabled={!hasAvailableCopies}
                 >
                   加入預約購物車
                 </button>
