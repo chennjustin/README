@@ -25,7 +25,7 @@ export function AdminMembersPage() {
   const [topUpModalOpen, setTopUpModalOpen] = useState(false);
   const [statusModalOpen, setStatusModalOpen] = useState(false);
   const [selectedMember, setSelectedMember] = useState<MemberSearchResult | null>(null);
-  const [topUpAmount, setTopUpAmount] = useState(0);
+  const [topUpAmount, setTopUpAmount] = useState<string>('');
   const [newStatus, setNewStatus] = useState('Active');
   const [actionLoading, setActionLoading] = useState(false);
   const pageLimit = 100;
@@ -122,7 +122,7 @@ export function AdminMembersPage() {
 
   const handleTopUpClick = (member: MemberSearchResult) => {
     setSelectedMember(member);
-    setTopUpAmount(0);
+    setTopUpAmount('');
     setError(null);
     setTopUpModalOpen(true);
   };
@@ -137,7 +137,7 @@ export function AdminMembersPage() {
   const closeTopUpModal = () => {
     setTopUpModalOpen(false);
     setSelectedMember(null);
-    setTopUpAmount(0);
+    setTopUpAmount('');
     setError(null);
   };
 
@@ -149,14 +149,18 @@ export function AdminMembersPage() {
 
   const handleTopUpSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!requireToken() || !selectedMember || topUpAmount <= 0) {
+    if (!requireToken() || !selectedMember) {
+      return;
+    }
+    const amount = Number(topUpAmount);
+    if (!topUpAmount || isNaN(amount) || amount <= 0) {
       setError('請輸入有效的儲值金額');
       return;
     }
     setActionLoading(true);
     setError(null);
     try {
-      await adminApi.createTopUp(token!, selectedMember.member_id, topUpAmount);
+      await adminApi.createTopUp(token!, selectedMember.member_id, amount);
       setMessage(`會員 ${selectedMember.name} 儲值成功。`);
       closeTopUpModal();
       await onSearch(currentPage); // Reload member list
@@ -380,7 +384,7 @@ export function AdminMembersPage() {
                     className="form-input"
                     type="number"
                     value={topUpAmount}
-                    onChange={(e) => setTopUpAmount(Number(e.target.value))}
+                    onChange={(e) => setTopUpAmount(e.target.value)}
                     min="1"
                     step="1"
                     required
