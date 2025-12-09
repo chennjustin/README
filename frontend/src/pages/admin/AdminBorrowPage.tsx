@@ -528,6 +528,10 @@ export function AdminBorrowPage() {
       return;
     }
 
+    // 確保參數是數字類型
+    const bookId = Number(removedItem.book_id);
+    const copiesSerial = Number(removedItem.copies_serial);
+
     // 先從列表中移除（樂觀更新）
     setItems((prevItems) => {
       const newItems = prevItems.filter((_, i) => i !== index);
@@ -538,8 +542,19 @@ export function AdminBorrowPage() {
 
     // 嘗試釋放鎖定（不影響 UI，失敗也不顯示錯誤）
     try {
-      await adminApi.unlockCopy(token, removedItem.book_id, removedItem.copies_serial);
-      console.log('Unlocked copy:', { bookId: removedItem.book_id, copiesSerial: removedItem.copies_serial });
+      // 驗證參數
+      if (!Number.isFinite(bookId) || !Number.isFinite(copiesSerial)) {
+        console.warn('Invalid parameters for unlock:', { 
+          book_id: removedItem.book_id, 
+          copies_serial: removedItem.copies_serial,
+          book_id_type: typeof removedItem.book_id,
+          copies_serial_type: typeof removedItem.copies_serial
+        });
+        return;
+      }
+      
+      await adminApi.unlockCopy(token, bookId, copiesSerial);
+      console.log('Unlocked copy:', { bookId, copiesSerial });
     } catch (e) {
       // 靜默失敗，不影響用戶體驗
       console.warn('Failed to unlock copy:', e);
