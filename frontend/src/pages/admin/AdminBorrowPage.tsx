@@ -567,11 +567,9 @@ export function AdminBorrowPage() {
     
     const mid = memberDetail.member_id;
 
-    // Revalidate all items before submission (先驗證，確保 items 是最新的)
-    const isValid = await revalidateAllItems();
-    if (!isValid) {
-      return;
-    }
+    // 注意：不重新驗證，因為項目已經在添加時鎖定了
+    // 重新驗證會導致"已被其他操作鎖定"的錯誤（因為無法區分當前操作和其他操作）
+    // 後端的 /loans API 會進行最終驗證
 
     // 驗證完成後，使用最新的 items 狀態（從 ref 獲取，因為 revalidateAllItems 會更新它）
     const validatedItems = itemsRef.current.length > 0 ? itemsRef.current : items;
@@ -1020,7 +1018,10 @@ export function AdminBorrowPage() {
           <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#f0fdf4', borderRadius: '8px', border: '1px solid #10b981' }}>
             <div style={{ fontWeight: '600', marginBottom: '0.5rem', color: '#10b981' }}>借書成功！</div>
             <div>借書 ID: {result.loan_id}</div>
-            <div>總租金: {result.total_rental_fee}</div>
+            <div>總租金: {result.final_price ?? result.total_rental_fee ?? 0}</div>
+            {result.member && (
+              <div>剩餘餘額: {result.member.balance ?? memberDetail?.balance ?? 0}</div>
+            )}
           </div>
         )}
 

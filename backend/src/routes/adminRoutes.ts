@@ -1382,34 +1382,30 @@ adminRouter.get(
           const hasReservation = hasReservationRaw === true || hasReservationRaw === 't' || hasReservationRaw === 1;
 
           if (!hasReservation) {
-            // 檢查是否已被其他 Admin 鎖定（Reserved 但沒有對應的 RESERVATION）
-            const checkLockedSql = `
-              SELECT COUNT(*) = 0 AS is_locked_by_admin
+            // 檢查是否有對應的 RESERVATION 記錄（任何會員的）
+            const checkReservationRecordSql = `
+              SELECT COUNT(*) > 0 AS has_reservation_record
               FROM RESERVATION r
               JOIN RESERVATION_RECORD rr ON r.reservation_id = rr.reservation_id
               WHERE rr.book_id = $1
                 AND r.status = 'Active'
             `;
-            const checkLockedRes = await client.query(checkLockedSql, [bookId]);
-            const isLockedByAdmin = checkLockedRes.rows[0]?.is_locked_by_admin === true || 
-                                    checkLockedRes.rows[0]?.is_locked_by_admin === 't' || 
-                                    checkLockedRes.rows[0]?.is_locked_by_admin === 1;
+            const checkReservationRecordRes = await client.query(checkReservationRecordSql, [bookId]);
+            const hasReservationRecordRaw = checkReservationRecordRes.rows[0]?.has_reservation_record;
+            const hasReservationRecord = hasReservationRecordRaw === true || hasReservationRecordRaw === 't' || hasReservationRecordRaw === 1;
 
-            if (isLockedByAdmin) {
+            if (hasReservationRecord) {
+              // 有 RESERVATION 記錄，但不是該會員的預約，不可借
               throw {
                 type: 'business',
                 status: 400,
-                code: 'COPY_ALREADY_LOCKED',
-                message: '此複本已被其他操作鎖定',
+                code: 'COPY_NOT_AVAILABLE',
+                message: '此複本為預約狀態，只有有預約的會員可以借閱',
               };
             }
-
-            throw {
-              type: 'business',
-              status: 400,
-              code: 'COPY_NOT_AVAILABLE',
-              message: '此複本為預約狀態，只有有預約的會員可以借閱',
-            };
+            // 沒有 RESERVATION 記錄，說明是被 Admin 鎖定的，可以繼續（允許重新鎖定或查看）
+            // 注意：這裡不檢查是否被其他 Admin 鎖定，因為無法區分當前操作和其他操作
+            // 最終的借書操作會在 /loans API 中進行驗證
           }
           // 如果有預約，可以鎖定（已經是 Reserved，不需要改變狀態）
         } else {
