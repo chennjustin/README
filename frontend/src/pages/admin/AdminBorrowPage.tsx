@@ -519,12 +519,12 @@ export function AdminBorrowPage() {
     const removedItem = items[index];
     if (!removedItem || !token) {
       // 如果沒有項目或沒有 token，直接移除
-      setItems((prevItems) => {
-        const newItems = prevItems.filter((_, i) => i !== index);
+    setItems((prevItems) => {
+      const newItems = prevItems.filter((_, i) => i !== index);
         itemsRef.current = newItems;
-        return newItems;
-      });
-      setError(null);
+      return newItems;
+    });
+    setError(null);
       return;
     }
 

@@ -1305,83 +1305,83 @@ adminRouter.get(
 
       const result = await withTransaction(async (client) => {
         // 檢查會員狀態並鎖定
-        const memberSql = `
-          SELECT 
-            m.member_id,
-            m.status,
-            l.discount_rate
-          FROM MEMBER m
-          JOIN MEMBERSHIP_LEVEL l ON m.level_id = l.level_id
-          WHERE m.member_id = $1
+      const memberSql = `
+        SELECT 
+          m.member_id,
+          m.status,
+          l.discount_rate
+        FROM MEMBER m
+        JOIN MEMBERSHIP_LEVEL l ON m.level_id = l.level_id
+        WHERE m.member_id = $1
           FOR UPDATE
-        `;
+      `;
         const memberRes = await client.query(memberSql, [memberId]);
-        if (memberRes.rowCount === 0) {
+      if (memberRes.rowCount === 0) {
           throw {
             type: 'business',
             status: 404,
             code: 'MEMBER_NOT_FOUND',
             message: '找不到會員',
           };
-        }
-        const member = memberRes.rows[0];
+      }
+      const member = memberRes.rows[0];
 
-        if (member.status !== 'Active') {
+      if (member.status !== 'Active') {
           throw {
             type: 'business',
             status: 400,
             code: 'MEMBER_INACTIVE',
             message: '會員狀態不可借書',
           };
-        }
+      }
 
         // 查詢並鎖定複本（使用 FOR UPDATE 防止並發修改）
-        const copySql = `
-          SELECT 
-            bc.book_id,
-            bc.copies_serial,
-            bc.status,
-            bc.rental_price,
-            bc.book_condition,
-            b.name AS book_name
-          FROM BOOK_COPIES bc
-          JOIN BOOK b ON bc.book_id = b.book_id
-          WHERE bc.book_id = $1 AND bc.copies_serial = $2
+      const copySql = `
+        SELECT 
+          bc.book_id,
+          bc.copies_serial,
+          bc.status,
+          bc.rental_price,
+          bc.book_condition,
+          b.name AS book_name
+        FROM BOOK_COPIES bc
+        JOIN BOOK b ON bc.book_id = b.book_id
+        WHERE bc.book_id = $1 AND bc.copies_serial = $2
           FOR UPDATE
-        `;
+      `;
         const copyRes = await client.query(copySql, [bookId, copiesSerial]);
-        if (copyRes.rowCount === 0) {
+      if (copyRes.rowCount === 0) {
           throw {
             type: 'business',
             status: 404,
             code: 'COPY_NOT_FOUND',
             message: '找不到書籍複本',
           };
-        }
-        const copy = copyRes.rows[0];
+      }
+      const copy = copyRes.rows[0];
 
         // 檢查複本狀態：Available 或 Reserved（但必須有對應的預約）
-        if (copy.status === 'Available') {
+      if (copy.status === 'Available') {
           // 可鎖定：將 status 改為 Reserved（但不建立 RESERVATION 記錄）
           await client.query(
             `UPDATE BOOK_COPIES SET status = 'Reserved' WHERE book_id = $1 AND copies_serial = $2`,
             [bookId, copiesSerial]
           );
-        } else if (copy.status === 'Reserved') {
-          // 檢查該會員是否有 Active 預約
-          const hasReservationSql = `
-            SELECT COUNT(*) > 0 AS has_reservation
-            FROM RESERVATION r
-            JOIN RESERVATION_RECORD rr ON r.reservation_id = rr.reservation_id
-            WHERE r.member_id = $1
-              AND rr.book_id = $2
-              AND r.status = 'Active'
-          `;
+      } else if (copy.status === 'Reserved') {
+        // 檢查該會員是否有 Active 預約
+        const hasReservationSql = `
+          SELECT COUNT(*) > 0 AS has_reservation
+          FROM RESERVATION r
+          JOIN RESERVATION_RECORD rr ON r.reservation_id = rr.reservation_id
+          WHERE r.member_id = $1
+            AND rr.book_id = $2
+            AND r.status = 'Active'
+        `;
           const hasReservationRes = await client.query(hasReservationSql, [memberId, bookId]);
-          const hasReservationRaw = hasReservationRes.rows[0]?.has_reservation;
-          const hasReservation = hasReservationRaw === true || hasReservationRaw === 't' || hasReservationRaw === 1;
-
-          if (!hasReservation) {
+        const hasReservationRaw = hasReservationRes.rows[0]?.has_reservation;
+        const hasReservation = hasReservationRaw === true || hasReservationRaw === 't' || hasReservationRaw === 1;
+        
+        if (!hasReservation) {
             // 檢查是否有對應的 RESERVATION 記錄（任何會員的）
             const checkReservationRecordSql = `
               SELECT COUNT(*) > 0 AS has_reservation_record
@@ -1405,22 +1405,22 @@ adminRouter.get(
             }
             
             // 沒有 RESERVATION 記錄，說明是被 Admin 鎖定的
-            // 檢查是否已被其他 Admin 鎖定（Reserved 但沒有對應的 RESERVATION）
+          // 檢查是否已被其他 Admin 鎖定（Reserved 但沒有對應的 RESERVATION）
             // 注意：這裡無法區分"當前操作"和"其他操作"，所以如果已被鎖定就拒絕
             // 但最終的借書操作（/loans API）會允許已被 Admin 鎖定的副本，因為可能是當前操作鎖定的
-            const checkLockedSql = `
-              SELECT COUNT(*) = 0 AS is_locked_by_admin
-              FROM RESERVATION r
-              JOIN RESERVATION_RECORD rr ON r.reservation_id = rr.reservation_id
-              WHERE rr.book_id = $1
-                AND r.status = 'Active'
-            `;
+          const checkLockedSql = `
+            SELECT COUNT(*) = 0 AS is_locked_by_admin
+            FROM RESERVATION r
+            JOIN RESERVATION_RECORD rr ON r.reservation_id = rr.reservation_id
+            WHERE rr.book_id = $1
+              AND r.status = 'Active'
+          `;
             const checkLockedRes = await client.query(checkLockedSql, [bookId]);
-            const isLockedByAdmin = checkLockedRes.rows[0]?.is_locked_by_admin === true || 
-                                    checkLockedRes.rows[0]?.is_locked_by_admin === 't' || 
-                                    checkLockedRes.rows[0]?.is_locked_by_admin === 1;
+          const isLockedByAdmin = checkLockedRes.rows[0]?.is_locked_by_admin === true || 
+                                  checkLockedRes.rows[0]?.is_locked_by_admin === 't' || 
+                                  checkLockedRes.rows[0]?.is_locked_by_admin === 1;
 
-            if (isLockedByAdmin) {
+          if (isLockedByAdmin) {
               // 已被其他 Admin 鎖定，拒絕加入列表
               throw {
                 type: 'business',
@@ -1428,11 +1428,11 @@ adminRouter.get(
                 code: 'COPY_ALREADY_LOCKED',
                 message: '此複本已被其他操作鎖定',
               };
-            }
+          }
             // 如果沒有被鎖定，說明可能是剛剛釋放的，可以繼續鎖定
           }
           // 如果有預約，可以鎖定（已經是 Reserved，不需要改變狀態）
-        } else {
+      } else {
           // Borrowed 或 Lost 狀態不可鎖定
           throw {
             type: 'business',
@@ -1440,12 +1440,12 @@ adminRouter.get(
             code: 'COPY_NOT_AVAILABLE',
             message: '複本不可借出',
           };
-        }
+      }
 
-        // Calculate rental fee: rental_price * discount_rate
-        const rentalPrice = Number(copy.rental_price);
-        const discountRate = Number(member.discount_rate);
-        const rentalFee = Math.round(rentalPrice * discountRate);
+      // Calculate rental fee: rental_price * discount_rate
+      const rentalPrice = Number(copy.rental_price);
+      const discountRate = Number(member.discount_rate);
+      const rentalFee = Math.round(rentalPrice * discountRate);
 
         return {
           book_id: copy.book_id,
