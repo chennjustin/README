@@ -280,7 +280,7 @@ memberRouter.delete(
             );
             // 如果沒有找到 reserved 複本，可能是資料不一致，但不影響取消預約的操作
             if (updateResult.rowCount === 0) {
-              console.warn(`警告：取消預約 ${reservationId} 時，書籍 ${bookId} 沒有找到 reserved 複本`);
+              // 警告：取消預約時，書籍沒有找到 reserved 複本（靜默處理）
             }
           }
         }

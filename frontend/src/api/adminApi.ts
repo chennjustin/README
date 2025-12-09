@@ -147,6 +147,13 @@ export const adminApi = {
       this.headers(token)
     );
   },
+  unlockCopy(token: string, bookId: number, copiesSerial: number) {
+    return api.post(
+      '/api/admin/borrow/unlock-copy',
+      { book_id: bookId, copies_serial: copiesSerial },
+      this.headers(token)
+    );
+  },
   searchLoans(
     token: string,
     type: 'loan_id' | 'member_id',

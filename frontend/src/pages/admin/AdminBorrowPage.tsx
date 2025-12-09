@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { adminApi } from '../../api/adminApi';
 import { useAdmin } from '../../context/AdminContext';
 import { BorrowPreview, MemberDetail } from '../../types';
@@ -54,11 +54,246 @@ export function AdminBorrowPage() {
     rental_price: number;
   }>>>({});
   const [loadingReservationCopies, setLoadingReservationCopies] = useState<Record<number, boolean>>({});
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null);
+  const originalNavigate = useNavigate();
+  const showDiscardConfirmRef = useRef(false);
+  const userChoiceMadeRef = useRef(false); // 追蹤用戶是否已經做出選擇
 
   // 同步 itemsRef 與 items state
   useEffect(() => {
     itemsRef.current = items;
   }, [items]);
+
+  // 釋放所有鎖定的副本
+  const unlockAllCopies = async (): Promise<{ total: number; successes: number; failures: number } | void> => {
+    if (!token) {
+      console.warn('沒有 token，無法釋放鎖定');
+      throw new Error('沒有登入 token，無法釋放鎖定');
+    }
+    
+    if (itemsRef.current.length === 0) {
+      console.log('沒有需要釋放的鎖定');
+      return;
+    }
+
+    try {
+      console.log('準備釋放鎖定，項目數量:', itemsRef.current.length);
+      const itemsToUnlock = [...itemsRef.current]; // 保存副本，避免在釋放過程中列表被清空
+      
+      // 並行釋放所有鎖定
+      const results = await Promise.allSettled(
+        itemsToUnlock.map((item) => {
+          // 確保參數是數字類型
+          const bookId = Number(item.book_id);
+          const copiesSerial = Number(item.copies_serial);
+          
+          console.log('釋放鎖定:', { 
+            book_id: bookId, 
+            copies_serial: copiesSerial,
+            original_book_id: item.book_id,
+            original_copies_serial: item.copies_serial,
+            book_id_type: typeof item.book_id,
+            copies_serial_type: typeof item.copies_serial
+          });
+          
+          // 驗證參數
+          if (!Number.isFinite(bookId) || !Number.isFinite(copiesSerial)) {
+            throw new Error(`無效的參數: book_id=${item.book_id} (${typeof item.book_id}), copies_serial=${item.copies_serial} (${typeof item.copies_serial})`);
+          }
+          
+          return adminApi.unlockCopy(token, bookId, copiesSerial);
+        })
+      );
+      
+      // 檢查結果
+      const failures = results.filter((r) => r.status === 'rejected');
+      const successes = results.length - failures.length;
+      
+      if (failures.length > 0) {
+        console.error('部分鎖定釋放失敗:', failures);
+        failures.forEach((f, index) => {
+          if (f.status === 'rejected') {
+            const item = itemsToUnlock[index];
+            console.error(`項目 ${item.book_id}-${item.copies_serial} 釋放失敗:`, f.reason);
+          }
+        });
+      }
+      
+      // 記錄成功的釋放
+      results.forEach((r, index) => {
+        if (r.status === 'fulfilled') {
+          const item = itemsToUnlock[index];
+          console.log(`成功釋放鎖定: ${item.book_id}-${item.copies_serial}`, r.value);
+        }
+      });
+      
+      // 清空列表（無論成功或失敗都清空，避免重複釋放）
+      setItems([]);
+      itemsRef.current = [];
+      
+      const result = {
+        total: results.length,
+        successes,
+        failures: failures.length,
+      };
+      
+      console.log('已釋放所有鎖定的副本，結果:', result);
+      
+      // 如果全部失敗，拋出錯誤
+      if (failures.length === results.length) {
+        throw new Error('所有鎖定釋放都失敗，請檢查後端日誌');
+      }
+      
+      return result;
+    } catch (e) {
+      console.error('釋放鎖定時發生錯誤:', e);
+      // 即使出錯也清空列表，避免重複嘗試
+      setItems([]);
+      itemsRef.current = [];
+      throw e; // 重新拋出錯誤，讓調用者知道
+    }
+  };
+
+  // 同步 showDiscardConfirmRef
+  useEffect(() => {
+    showDiscardConfirmRef.current = showDiscardConfirm;
+  }, [showDiscardConfirm]);
+
+  // 攔截路由跳轉：監聽點擊事件和攔截 navigate 調用
+  useEffect(() => {
+    const handleLinkClick = (e: MouseEvent) => {
+      // 檢查是否有未完成的借書列表
+      if (itemsRef.current.length > 0) {
+        const target = e.target as HTMLElement;
+        const link = target.closest('a[href]') as HTMLAnchorElement;
+        
+        if (link && link.href) {
+          // 檢查是否是內部鏈接（不是外部鏈接）
+          const url = new URL(link.href);
+          if (url.origin === window.location.origin) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            // 顯示確認對話框
+            setShowDiscardConfirm(true);
+            showDiscardConfirmRef.current = true;
+            setPendingNavigation(() => () => {
+              window.location.href = link.href;
+            });
+          }
+        }
+      }
+    };
+
+    // 攔截所有點擊事件
+    document.addEventListener('click', handleLinkClick, true);
+
+    return () => {
+      document.removeEventListener('click', handleLinkClick, true);
+    };
+  }, []);
+
+  // 攔截點擊事件來攔截 NavLink 的導航
+  // 注意：由於我們使用的是 BrowserRouter 而不是 data router，無法使用 useBlocker
+  // 所以我們通過攔截點擊事件來實現類似功能
+
+  // 清理：當組件卸載或離開頁面時，提醒用戶並處理鎖定
+  useEffect(() => {
+    // 監聽頁面卸載事件（關閉標籤、刷新頁面等）
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // 如果有未完成的借書列表，顯示提醒
+      if (itemsRef.current.length > 0) {
+        // 標準的瀏覽器提醒（無法自訂按鈕文字）
+        e.preventDefault();
+        e.returnValue = '您有未完成的借書流程，確定要離開嗎？';
+        return e.returnValue;
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    // 組件卸載時清理（切換到其他頁面）
+    // 作為安全措施：如果用戶直接關閉標籤或刷新，自動釋放鎖定
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      // 注意：這裡不自動釋放，因為 useBlocker 會處理路由跳轉的情況
+      // 只有在真正離開頁面（beforeunload）時才會自動釋放
+    };
+  }, []);
+
+  // 處理捨棄借書（釋放所有鎖定並清空列表）
+  const handleDiscardBorrow = async () => {
+    try {
+      userChoiceMadeRef.current = true; // 標記用戶已做出選擇
+      
+      // 先釋放所有鎖定
+      console.log('開始釋放鎖定，當前列表:', itemsRef.current);
+      const unlockResult = await unlockAllCopies();
+      console.log('鎖定釋放完成，結果:', unlockResult);
+      
+      // 檢查是否有失敗的釋放
+      if (unlockResult && unlockResult.failures > 0) {
+        setError(`部分鎖定釋放失敗（${unlockResult.failures}/${unlockResult.total}），請檢查控制台`);
+      }
+      
+      // 關閉確認對話框
+      setShowDiscardConfirm(false);
+      showDiscardConfirmRef.current = false;
+      
+      // 如果有待處理的導航，執行它
+      if (pendingNavigation) {
+        const nav = pendingNavigation;
+        setPendingNavigation(null);
+        // 延遲一下確保狀態更新完成
+        setTimeout(() => {
+          nav();
+        }, 100);
+      }
+    } catch (error: any) {
+      console.error('捨棄借書時發生錯誤:', error);
+      const errorMessage = error?.message || '釋放鎖定時發生錯誤，請重試';
+      setError(errorMessage);
+      // 即使出錯也關閉對話框，讓用戶知道發生了什麼
+      setShowDiscardConfirm(false);
+      showDiscardConfirmRef.current = false;
+    }
+  };
+
+  // 處理繼續借書（取消導航，留在當前頁面）
+  const handleContinueBorrow = () => {
+    userChoiceMadeRef.current = true; // 標記用戶已做出選擇（選擇繼續，保持鎖定）
+    setShowDiscardConfirm(false);
+    showDiscardConfirmRef.current = false;
+    setPendingNavigation(null);
+  };
+
+  // 組件卸載時的安全措施：如果用戶沒有通過確認對話框做出選擇，自動釋放鎖定
+  useEffect(() => {
+    return () => {
+      // 只有在用戶沒有做出明確選擇的情況下才自動釋放鎖定
+      // 如果用戶選擇了"繼續借書"，userChoiceMadeRef 會是 true，不應該自動釋放
+      if (token && itemsRef.current.length > 0 && !userChoiceMadeRef.current) {
+        // 使用 fetch with keepalive 確保請求能完成
+        itemsRef.current.forEach((item) => {
+          fetch('/api/admin/borrow/unlock-copy', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              book_id: item.book_id,
+              copies_serial: item.copies_serial,
+            }),
+            keepalive: true,
+          }).catch(() => {
+            // 靜默失敗
+          });
+        });
+      }
+    };
+  }, [token]);
 
   // Load reservation data from navigation state
   useEffect(() => {
@@ -142,24 +377,43 @@ export function AdminBorrowPage() {
   };
 
   function parseError(e: any): { code: string; message: string } {
+    // 處理 axios 風格的錯誤
     if (e?.response?.data?.error) {
       return {
         code: e.response.data.error.code || 'UNKNOWN_ERROR',
         message: e.response.data.error.message || '發生未知錯誤',
       };
     }
-    return { code: 'UNKNOWN_ERROR', message: e?.message || '發生未知錯誤' };
+    
+    // 處理 api.ts 拋出的錯誤格式：CODE: message
+    if (e?.message) {
+      const match = e.message.match(/^([^:]+):\s*(.+)$/);
+      if (match) {
+        return {
+          code: match[1],
+          message: match[2],
+        };
+      }
+      // 如果沒有 CODE: 格式，直接使用 message
+      return { code: 'UNKNOWN_ERROR', message: e.message };
+    }
+    
+    return { code: 'UNKNOWN_ERROR', message: '發生未知錯誤' };
   }
 
   function getErrorMessage(code: string, message: string): string {
     const errorMessages: Record<string, string> = {
       MEMBER_NOT_FOUND: '找不到此會員',
+      MEMBER_INACTIVE: '會員狀態不可借書',
       INSUFFICIENT_BALANCE: '會員餘額不足',
       LOAN_LIMIT_EXCEEDED: '已達借閱上限',
+      MAX_BOOK_EXCEEDED: '超過可借閱本數上限',
       BOOK_NOT_AVAILABLE: '書籍不可借',
       COPY_NOT_FOUND: '找不到此書籍複本',
       COPY_NOT_AVAILABLE: '此複本不可借',
+      COPY_ALREADY_LOCKED: '此複本已被其他操作鎖定',
       INVALID_INPUT: message || '輸入格式錯誤',
+      UNKNOWN_ERROR: message || '發生未知錯誤',
     };
     return errorMessages[code] || message || '發生未知錯誤';
   }
@@ -261,15 +515,35 @@ export function AdminBorrowPage() {
     }
   };
 
-  const removeItem = (index: number) => {
+  const removeItem = async (index: number) => {
+    const removedItem = items[index];
+    if (!removedItem || !token) {
+      // 如果沒有項目或沒有 token，直接移除
+      setItems((prevItems) => {
+        const newItems = prevItems.filter((_, i) => i !== index);
+        itemsRef.current = newItems;
+        return newItems;
+      });
+      setError(null);
+      return;
+    }
+
+    // 先從列表中移除（樂觀更新）
     setItems((prevItems) => {
-      const removedItem = prevItems[index];
       const newItems = prevItems.filter((_, i) => i !== index);
-      itemsRef.current = newItems; // 同步更新 ref
-      console.log('Removed item:', { index, removedItem, newItemsCount: newItems.length });
+      itemsRef.current = newItems;
       return newItems;
     });
     setError(null);
+
+    // 嘗試釋放鎖定（不影響 UI，失敗也不顯示錯誤）
+    try {
+      await adminApi.unlockCopy(token, removedItem.book_id, removedItem.copies_serial);
+      console.log('Unlocked copy:', { bookId: removedItem.book_id, copiesSerial: removedItem.copies_serial });
+    } catch (e) {
+      // 靜默失敗，不影響用戶體驗
+      console.warn('Failed to unlock copy:', e);
+    }
   };
 
   const onSubmit = async (e: FormEvent) => {
@@ -749,7 +1023,79 @@ export function AdminBorrowPage() {
             <div>總租金: {result.total_rental_fee}</div>
           </div>
         )}
+
+        {/* 捨棄借書按鈕（當有未完成的借書列表時顯示） */}
+        {items.length > 0 && (
+          <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #e5e7eb' }}>
+            <button
+              type="button"
+              className="btn"
+              onClick={async () => {
+                if (window.confirm('確定要捨棄當前的借書流程嗎？所有已加入的書籍將被釋放。')) {
+                  await handleDiscardBorrow();
+                }
+              }}
+              disabled={loading || validating}
+              style={{ 
+                backgroundColor: '#ef4444', 
+                color: 'white',
+                border: 'none'
+              }}
+            >
+              捨棄借書
+            </button>
+          </div>
+        )}
       </form>
+
+      {/* 離開頁面確認對話框 */}
+      {showDiscardConfirm && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: '2rem',
+            borderRadius: '8px',
+            maxWidth: '400px',
+            width: '90%',
+            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+          }}>
+            <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>未完成的借書流程</h3>
+            <p style={{ marginBottom: '1.5rem', color: '#6b7280' }}>
+              您有 {itemsRef.current.length} 本已加入借書列表的書籍尚未完成借閱流程。
+              確定要離開嗎？
+            </p>
+            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="btn"
+                onClick={handleContinueBorrow}
+                style={{ backgroundColor: '#6b7280', color: 'white', border: 'none' }}
+              >
+                繼續借書
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={handleDiscardBorrow}
+                style={{ backgroundColor: '#ef4444', color: 'white', border: 'none' }}
+              >
+                捨棄借書
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -147,8 +147,7 @@ bookRouter.get(
             await collection.insertOne(searchRecord);
           }
         } catch (mongoError) {
-          // MongoDB 錯誤不影響搜尋結果，只記錄日誌
-          console.error('Failed to save search history:', mongoError);
+          // MongoDB 錯誤不影響搜尋結果，靜默處理
         }
       }
 

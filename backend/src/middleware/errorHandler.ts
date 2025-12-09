@@ -2,20 +2,7 @@ import { NextFunction, Request, Response } from 'express';
 import { ApiError } from '../types';
 
 export function errorHandler(err: any, _req: Request, res: Response<ApiError>, _next: NextFunction) {
-  // 記錄完整的錯誤資訊到控制台
-  console.error('=== Error Details ===');
-  console.error('Error:', err);
-  console.error('Error Type:', typeof err);
-  console.error('Error Code:', err?.code);
-  console.error('Error Message:', err?.message);
-  console.error('Error Stack:', err?.stack);
-  if (err?.detail) {
-    console.error('PostgreSQL Detail:', err.detail);
-  }
-  if (err?.hint) {
-    console.error('PostgreSQL Hint:', err.hint);
-  }
-  console.error('===================');
+  // 錯誤處理邏輯（已移除詳細日誌輸出）
 
   // 資料庫連線錯誤
   if (err && err.code === 'ECONNREFUSED') {
